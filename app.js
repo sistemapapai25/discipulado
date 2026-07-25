@@ -534,22 +534,23 @@ function renderTrainingBuilder() {
           <div class="form-grid">
             <div class="field">
               <label for="module-title-${moduleIndex}">Título do módulo</label>
-              <input class="input" id="module-title-${moduleIndex}" type="text" value="${escapeHtml(module.title)}" data-module-field="title" data-module-index="${moduleIndex}" placeholder="Ex: Identidade e Chamado" />
+              <input class="input" id="module-title-${moduleIndex}" type="text" value="${escapeHtml(module.title || "")}" data-module-field="title" data-module-index="${moduleIndex}" placeholder="Ex: Identidade e Chamado" />
             </div>
 
             <div class="field">
               <label for="module-video-${moduleIndex}">Link do vídeo do módulo</label>
-              <input class="input" id="module-video-${moduleIndex}" type="url" value="${escapeHtml(module.videoUrl)}" data-module-field="videoUrl" data-module-index="${moduleIndex}" placeholder="https://youtu.be/..." />
+              <input class="input" id="module-video-${moduleIndex}" type="url" value="${escapeHtml(module.videoUrl || "")}" data-module-field="videoUrl" data-module-index="${moduleIndex}" placeholder="https://youtu.be/..." />
+              <p class="hint">Opcional quando o link principal do assunto estiver preenchido.</p>
             </div>
 
             <div class="form-grid two">
               <div class="field">
                 <label for="module-start-${moduleIndex}">Início do corte</label>
-                <input class="input" id="module-start-${moduleIndex}" type="text" value="${escapeHtml(module.startTime)}" data-module-field="startTime" data-module-index="${moduleIndex}" placeholder="Ex: 24:58" />
+                <input class="input" id="module-start-${moduleIndex}" type="text" value="${escapeHtml(module.startTime || "")}" data-module-field="startTime" data-module-index="${moduleIndex}" placeholder="Ex: 24:58" />
               </div>
               <div class="field">
                 <label for="module-end-${moduleIndex}">Fim do corte</label>
-                <input class="input" id="module-end-${moduleIndex}" type="text" value="${escapeHtml(module.endTime)}" data-module-field="endTime" data-module-index="${moduleIndex}" placeholder="Ex: 33:23" />
+                <input class="input" id="module-end-${moduleIndex}" type="text" value="${escapeHtml(module.endTime || "")}" data-module-field="endTime" data-module-index="${moduleIndex}" placeholder="Ex: 33:23" />
               </div>
             </div>
 
@@ -577,12 +578,18 @@ function renderTrainingBuilder() {
         <div class="form-grid">
           <div class="field">
             <label for="trainingTitle">Título do assunto</label>
-            <input class="input" id="trainingTitle" type="text" value="${escapeHtml(draft.title)}" data-training-field="title" placeholder="Ex: Fundamentos da Liderança Cristã" />
+            <input class="input" id="trainingTitle" type="text" value="${escapeHtml(draft.title || "")}" data-training-field="title" placeholder="Ex: Fundamentos da Liderança Cristã" />
           </div>
 
           <div class="field">
             <label for="trainingSpeaker">Pregador ou facilitador</label>
-            <input class="input" id="trainingSpeaker" type="text" value="${escapeHtml(draft.speaker)}" data-training-field="speaker" placeholder="Ex: Pastor, apóstolo ou líder responsável" />
+            <input class="input" id="trainingSpeaker" type="text" value="${escapeHtml(draft.speaker || "")}" data-training-field="speaker" placeholder="Ex: Pastor, apóstolo ou líder responsável" />
+          </div>
+
+          <div class="field">
+            <label for="trainingVideoUrl">Link principal do vídeo do assunto</label>
+            <input class="input" id="trainingVideoUrl" type="url" value="${escapeHtml(draft.youtubeVideoUrl || "")}" data-training-field="youtubeVideoUrl" placeholder="https://youtu.be/..." />
+            <p class="hint">Use este campo quando todos os módulos forem cortes do mesmo vídeo.</p>
           </div>
 
           <div class="summary">
@@ -1191,6 +1198,7 @@ function createEmptyTrainingDraft() {
   return {
     title: "",
     speaker: "",
+    youtubeVideoUrl: "",
     modules: [createEmptyModuleDraft()],
   };
 }
@@ -1203,11 +1211,11 @@ function createTrainingDraftFromTraining(training) {
   return {
     title: String(training?.title || ""),
     speaker: String(training?.speaker || ""),
+    youtubeVideoUrl: buildYoutubeWatchUrl(training?.youtubeVideoId || ""),
     modules: modules.map((module) => ({
       title: String(module?.title || ""),
       videoUrl:
-        String(module?.videoUrl || "") ||
-        buildYoutubeWatchUrl(module?.videoId || training?.youtubeVideoId || ""),
+        String(module?.videoUrl || "") || buildYoutubeWatchUrl(module?.videoId || ""),
       startTime:
         formatSecondsToTimeInput(module?.start) ||
         getTimeLabelPart(module?.timeLabel, 0),
@@ -1291,23 +1299,26 @@ function syncTrainingDraftFromForm() {
 
 function validateTrainingDraft() {
   const draft = state.trainingDraft;
+  const hasTrainingVideo = String(draft.youtubeVideoUrl || "").trim();
 
-  if (!draft.title.trim()) {
+  if (!String(draft.title || "").trim()) {
     showToast("Informe o título do assunto.", "error");
     document.querySelector("#trainingTitle")?.focus();
     return false;
   }
 
   const invalidModuleIndex = draft.modules.findIndex((module) => {
-    const hasTitle = module.title.trim();
-    const hasVideo = module.videoUrl.trim();
-    const hasQuestion = module.questions.some((question) => question.text.trim());
+    const hasTitle = String(module.title || "").trim();
+    const hasVideo = hasTrainingVideo || String(module.videoUrl || "").trim();
+    const hasQuestion =
+      Array.isArray(module.questions) &&
+      module.questions.some((question) => String(question.text || "").trim());
     return !hasTitle || !hasVideo || !hasQuestion;
   });
 
   if (invalidModuleIndex >= 0) {
     showToast(
-      `Complete o título, o link do vídeo e pelo menos uma pergunta no módulo ${invalidModuleIndex + 1}.`,
+      `Complete o título, o link principal do vídeo ou o link do módulo, e pelo menos uma pergunta no módulo ${invalidModuleIndex + 1}.`,
       "error",
     );
     return false;

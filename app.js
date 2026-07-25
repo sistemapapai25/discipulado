@@ -374,10 +374,10 @@ function renderIntro() {
         </div>
 
         <div class="actions">
+          <button class="btn secondary" type="button" data-action="create-training">Criar assunto</button>
           ${
             hasAccess
               ? `<button class="btn secondary" type="button" data-action="change-email">Trocar e-mail</button>
-                 <button class="btn secondary" type="button" data-action="create-training">Criar assunto</button>
                  <button class="btn" type="button" data-action="start" ${canStart ? "" : "disabled"}>Iniciar treinamento</button>`
               : `<button class="btn" type="button" data-action="access" ${state.leaderStatus === "loading" ? "disabled" : ""}>${state.leaderStatus === "loading" ? "Verificando..." : "Acessar treinamento"}</button>`
           }

@@ -6,19 +6,21 @@ WebApp mobile-first para treinamento de lideranca da igreja, com modulos em vide
 
 - `index.html`: estrutura da aplicacao.
 - `styles.css`: layout responsivo e estilo visual.
-- `app.js`: configuracao do estudo, Supabase, fluxo dos modulos e envio.
+- `app.js`: configuracao do estudo, fluxo dos modulos e envio.
+- `api/lideres.js`: Vercel Serverless Function que le lideres ativos do Supabase church360.
 - `api/salvar.js`: Vercel Serverless Function que grava no Neon.
 
 ## Configuracao
 
 1. Em `app.js`, preencha:
-   - `SUPABASE_CONFIG.url`
-   - `SUPABASE_CONFIG.anonKey`
    - `YOUTUBE_VIDEO_ID`
    - `PASTOR_WHATSAPP_NUMBER`
 
-2. Na Vercel, configure a variavel de ambiente:
+2. Na Vercel, configure as variaveis de ambiente:
    - `DATABASE_URL`
+   - `SUPABASE_URL`
+   - `SUPABASE_ANON_KEY`
+   - `SUPABASE_SERVICE_ROLE_KEY` somente se as policies anon nao forem suficientes
 
 3. Instale a dependencia da funcao serverless:
 

@@ -1,30 +1,7 @@
 "use strict";
 
-const SUPABASE_CONFIG = {
-  url: "https://heswheljavpcyspuicsi.supabase.co/rest/v1/",
-  anonKey: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imhlc3doZWxqYXZwY3lzcHVpY3NpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDk3NDc4NDMsImV4cCI6MjA2NTMyMzg0M30.JcGUOFynclGhrLRuZbiGMXsNviMLLBSLZ4l89HgDvNg",
-  membershipTable: "ministry_member",
-  leaderRoles: ["leader", "coordinator"],
-  leadersSelect: `
-    id,
-    role,
-    user_account!inner (
-      id,
-      full_name,
-      first_name,
-      last_name,
-      nickname,
-      is_active
-    ),
-    ministry!inner (
-      id,
-      name,
-      is_active
-    )
-  `,
-};
-
 const API_ENDPOINT = "/api/salvar";
+const LEADERS_ENDPOINT = "/api/lideres";
 const PASTOR_WHATSAPP_NUMBER = "55COLE_AQUI_NUMERO_DO_PASTOR";
 const YOUTUBE_VIDEO_ID = "COLE_AQUI_YOUTUBE_VIDEO_ID";
 const DRAFT_KEY = "discipulado-lideres-draft-v1";
@@ -165,7 +142,6 @@ const progressFill = document.querySelector("#progressFill");
 const progressLabel = document.querySelector("#progressLabel");
 const studyTitle = document.querySelector("#studyTitle");
 
-let supabaseClient = null;
 let toastTimeout;
 
 document.addEventListener("DOMContentLoaded", init);
@@ -182,24 +158,16 @@ async function loadLeaders() {
   render();
 
   try {
-    supabaseClient = createSupabaseClient();
-    if (!supabaseClient) {
-      throw new Error("Configure SUPABASE_URL e SUPABASE_ANON_KEY no app.js.");
+    const response = await fetch(LEADERS_ENDPOINT, {
+      headers: { Accept: "application/json" },
+    });
+    const result = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+      throw new Error(result.error || "Não foi possível carregar os líderes.");
     }
 
-    const { data, error } = await supabaseClient
-      .from(SUPABASE_CONFIG.membershipTable)
-      .select(SUPABASE_CONFIG.leadersSelect)
-      .in("role", SUPABASE_CONFIG.leaderRoles)
-      .eq("user_account.is_active", true)
-      .eq("ministry.is_active", true);
-
-    if (error) {
-      throw error;
-    }
-
-    state.leaders = (data || [])
-      .map(normalizeLeader)
+    state.leaders = (result.leaders || [])
       .filter(Boolean)
       .sort(sortLeaders);
     state.leaderStatus = "loaded";
@@ -221,51 +189,11 @@ async function loadLeaders() {
   render();
 }
 
-function createSupabaseClient() {
-  const hasConfig =
-    SUPABASE_CONFIG.url.startsWith("https://") &&
-    !SUPABASE_CONFIG.url.includes("COLE_AQUI") &&
-    SUPABASE_CONFIG.anonKey &&
-    !SUPABASE_CONFIG.anonKey.includes("COLE_AQUI");
-
-  if (!hasConfig || !window.supabase?.createClient) {
-    return null;
-  }
-
-  return window.supabase.createClient(
-    SUPABASE_CONFIG.url,
-    SUPABASE_CONFIG.anonKey,
-  );
-}
-
-function normalizeLeader(leader) {
-  const person = leader.user_account;
-  const ministry = leader.ministry;
-
-  if (!person?.id || !ministry?.id) {
-    return null;
-  }
-
-  const name =
-    person.full_name ||
-    [person.first_name, person.last_name].filter(Boolean).join(" ") ||
-    person.nickname ||
-    "Líder sem nome";
-  const ministryName = ministry.name || "Ministério não informado";
-
-  return {
-    id: String(leader.id),
-    userId: String(person.id),
-    ministryId: String(ministry.id),
-    name,
-    ministry: ministryName,
-    role: leader.role || "",
-    label: `${name} - ${ministryName}`,
-  };
-}
-
 function sortLeaders(firstLeader, secondLeader) {
-  return firstLeader.label.localeCompare(secondLeader.label, "pt-BR", {
+  const firstLabel = firstLeader.label || firstLeader.name || "";
+  const secondLabel = secondLeader.label || secondLeader.name || "";
+
+  return firstLabel.localeCompare(secondLabel, "pt-BR", {
     sensitivity: "base",
   });
 }
@@ -433,7 +361,7 @@ function getLeaderStatusText() {
   }
 
   if (state.leaderStatus === "error") {
-    return "Preencha as credenciais do Supabase em app.js e confira as permissões de leitura das tabelas ministry_member, user_account e ministry.";
+    return "Confira as variáveis SUPABASE_URL e SUPABASE_ANON_KEY na Vercel e as permissões de leitura no Supabase.";
   }
 
   return "A lista será carregada automaticamente.";

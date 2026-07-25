@@ -29,7 +29,9 @@ const state = {
   currentModuleIndex: -1,
   answers: {},
   isSubmitting: false,
+  isSavingModule: false,
   isSavingTraining: false,
+  submissionId: "",
   submitted: false,
 };
 
@@ -284,9 +286,9 @@ function renderMainMenu() {
   const departmentMarkup = departmentList
     ? `<div class="module-meta">${departmentList}</div>`
     : "";
-  const emailMarkup = state.leaders.length
-    ? `<p>${escapeHtml(state.leader.email || state.email)}</p>`
-    : "";
+  const memberIdentityMarkup = getMemberIdentityMarkup({
+    showEmail: Boolean(state.leaders.length),
+  });
 
   app.innerHTML = `
     <section class="panel">
@@ -298,8 +300,7 @@ function renderMainMenu() {
         <div class="form-grid">
           <div class="summary">
             <article class="summary-item">
-              <h3>${escapeHtml(state.leader.name)}</h3>
-              ${emailMarkup}
+              ${memberIdentityMarkup}
               ${departmentMarkup}
             </article>
           </div>
@@ -416,6 +417,7 @@ function bindMainMenuEvents() {
       state.currentModuleIndex = -1;
       state.answers = {};
       state.submitted = false;
+      state.submissionId = "";
       state.leaderStatus = "idle";
       saveDraft();
       render();
@@ -432,6 +434,7 @@ function bindMainMenuEvents() {
 
       state.selectedLeaderName = state.leader.name;
       state.ministry = getDepartmentNames();
+      state.submissionId = state.submissionId || createSubmissionId();
       state.currentModuleIndex = 0;
       saveDraft();
       render();
@@ -619,6 +622,7 @@ function renderModule(module) {
   const isLast =
     state.currentModuleIndex === getSelectedTraining().modules.length - 1;
   const videoMarkup = getVideoMarkup(module);
+  const nextButtonLabel = state.isSavingModule ? "Salvando..." : "Próximo módulo";
 
   app.innerHTML = `
     <section class="panel">
@@ -626,7 +630,6 @@ function renderModule(module) {
         <p class="eyebrow">Módulo ${module.number}</p>
         <h2>${escapeHtml(module.title)}</h2>
         <div class="module-meta">
-          <span class="pill">Corte ${escapeHtml(module.timeLabel)}</span>
           <span class="pill alt">${module.questions.length} pergunta(s)</span>
         </div>
       </div>
@@ -640,9 +643,9 @@ function renderModule(module) {
           <button class="btn secondary" type="button" data-action="menu">Menu principal</button>
           ${
             isLast
-              ? `<button class="btn" type="button" data-action="submit" ${state.isSubmitting ? "disabled" : ""}>${state.isSubmitting ? "Enviando..." : "Concluir e Enviar Respostas"}</button>
+              ? `<button class="btn" type="button" data-action="submit" ${state.isSubmitting ? "disabled" : ""}>${state.isSubmitting ? "Salvando..." : "Concluir treinamento"}</button>
                  <button class="btn whatsapp" type="button" data-action="whatsapp">Enviar Copia para o Pastor via WhatsApp</button>`
-              : `<button class="btn" type="button" data-action="next">Próximo módulo</button>`
+              : `<button class="btn" type="button" data-action="next" ${state.isSavingModule ? "disabled" : ""}>${nextButtonLabel}</button>`
           }
         </div>
       </div>
@@ -663,7 +666,7 @@ function getVideoMarkup(module) {
         <div class="video-placeholder">
           <div>
             <strong>Player do YouTube preparado</strong>
-            <span>Cadastre o link do YouTube para abrir este corte automaticamente: ${escapeHtml(module.timeLabel)}.</span>
+            <span>Cadastre o link do YouTube para abrir este módulo automaticamente.</span>
           </div>
         </div>
       </div>
@@ -734,16 +737,9 @@ function bindModuleEvents() {
       window.scrollTo({ top: 0, behavior: "smooth" });
     });
 
-  document.querySelector("[data-action='next']")?.addEventListener("click", () => {
-    if (!validateCurrentModule()) {
-      return;
-    }
-
-    state.currentModuleIndex += 1;
-    saveDraft();
-    render();
-    window.scrollTo({ top: 0, behavior: "smooth" });
-  });
+  document
+    .querySelector("[data-action='next']")
+    ?.addEventListener("click", saveCurrentModuleAndGoNext);
 
   document
     .querySelector("[data-action='submit']")
@@ -910,6 +906,46 @@ async function saveTraining() {
   }
 }
 
+async function saveCurrentModuleAndGoNext() {
+  if (!validateCurrentModule()) {
+    return;
+  }
+
+  state.isSavingModule = true;
+  render();
+
+  try {
+    await saveModuleByIndex(state.currentModuleIndex);
+    state.currentModuleIndex += 1;
+    state.isSavingModule = false;
+    saveDraft();
+    render();
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  } catch (error) {
+    state.isSavingModule = false;
+    showToast(`${error.message} Tente novamente antes de avançar.`, "error");
+    render();
+  }
+}
+
+async function saveModuleByIndex(moduleIndex) {
+  const response = await fetch(API_ENDPOINT, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(buildModulePayload(moduleIndex)),
+  });
+
+  const result = await response.json().catch(() => ({}));
+
+  if (!response.ok) {
+    throw new Error(result.error || "Não foi possível salvar este módulo.");
+  }
+
+  return result;
+}
+
 async function submitAnswers() {
   if (!validateAllAnswers()) {
     return;
@@ -919,19 +955,7 @@ async function submitAnswers() {
   render();
 
   try {
-    const response = await fetch(API_ENDPOINT, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(buildPayload()),
-    });
-
-    const result = await response.json().catch(() => ({}));
-
-    if (!response.ok) {
-      throw new Error(result.error || "Não foi possível salvar as respostas.");
-    }
+    await saveModuleByIndex(state.currentModuleIndex);
 
     state.submitted = true;
     state.isSubmitting = false;
@@ -1017,31 +1041,84 @@ function buildPayload() {
       id: selectedLeader?.userId || state.leader?.id || state.selectedLeaderId,
       nome: state.leader?.name || selectedLeader?.name || state.selectedLeaderName,
       email: state.leader?.email || state.email,
+      foto_url: state.leader?.photoUrl || "",
       vinculo_ministerio_id: selectedLeader?.id || null,
       ministerio_id: selectedLeader?.ministryId || null,
       papel: selectedLeader?.role || null,
     },
     ministerio: departmentNames || "Não informado",
     departamentos: getDepartmentsForPayload(),
-    respostas: selectedTraining.modules.map((module) => ({
-      modulo_id: module.id,
-      modulo_numero: module.number,
-      modulo_titulo: module.title,
-      corte: module.timeLabel,
-      perguntas: module.questions.map((question) => ({
-        pergunta_id: question.id,
-        pergunta_titulo: question.title,
-        pergunta_texto: question.text,
-        resposta: (state.answers[question.id] || "").trim(),
-      })),
-    })),
+    respostas: selectedTraining.modules.map(buildModuleAnswer),
     resumo_whatsapp: buildWhatsappSummary(),
     metadados: {
       origem: "webapp-discipulado-lideres",
       versao: "1.0.0",
+      tipo_registro: "treinamento",
+      envio_id: getOrCreateSubmissionId(),
       concluido_em: new Date().toISOString(),
       user_agent: navigator.userAgent,
     },
+  };
+}
+
+function buildModulePayload(moduleIndex) {
+  const selectedLeader = getSelectedLeader();
+  const selectedTraining = getSelectedTraining();
+  const module = selectedTraining?.modules[moduleIndex];
+  const departmentNames = getDepartmentNames();
+
+  if (!selectedTraining || !module) {
+    throw new Error("Nenhum módulo selecionado.");
+  }
+
+  return {
+    estudo: {
+      id: selectedTraining.id,
+      titulo: selectedTraining.title,
+      pregador: selectedTraining.speaker,
+    },
+    modulo: {
+      id: module.id,
+      numero: module.number,
+      titulo: module.title,
+    },
+    lider: {
+      id: selectedLeader?.userId || state.leader?.id || state.selectedLeaderId,
+      nome: state.leader?.name || selectedLeader?.name || state.selectedLeaderName,
+      email: state.leader?.email || state.email,
+      foto_url: state.leader?.photoUrl || "",
+      vinculo_ministerio_id: selectedLeader?.id || null,
+      ministerio_id: selectedLeader?.ministryId || null,
+      papel: selectedLeader?.role || null,
+    },
+    ministerio: departmentNames || "Não informado",
+    departamentos: getDepartmentsForPayload(),
+    respostas: [buildModuleAnswer(module)],
+    resumo_whatsapp: buildModuleWhatsappSummary(module),
+    metadados: {
+      origem: "webapp-discipulado-lideres",
+      versao: "1.0.0",
+      tipo_registro: "modulo",
+      envio_id: getOrCreateSubmissionId(),
+      modulo_indice: moduleIndex,
+      salvo_em: new Date().toISOString(),
+      user_agent: navigator.userAgent,
+    },
+  };
+}
+
+function buildModuleAnswer(module) {
+  return {
+    modulo_id: module.id,
+    modulo_numero: module.number,
+    modulo_titulo: module.title,
+    corte: module.timeLabel,
+    perguntas: module.questions.map((question) => ({
+      pergunta_id: question.id,
+      pergunta_titulo: question.title,
+      pergunta_texto: question.text,
+      resposta: (state.answers[question.id] || "").trim(),
+    })),
   };
 }
 
@@ -1071,11 +1148,37 @@ function buildWhatsappSummary() {
 
   selectedTraining.modules.forEach((module) => {
     lines.push(`Módulo ${module.number}: ${module.title}`);
-    lines.push(`Corte: ${module.timeLabel}`);
     module.questions.forEach((question) => {
       lines.push(`${question.title}: ${(state.answers[question.id] || "").trim() || "Sem resposta"}`);
     });
     lines.push("");
+  });
+
+  return lines.join("\n");
+}
+
+function buildModuleWhatsappSummary(module) {
+  const leaderName =
+    state.leader?.name || getSelectedLeader()?.name || state.selectedLeaderName || "Não informado";
+  const selectedTraining = getSelectedTraining();
+  const departmentNames = getDepartmentNames();
+  const lines = [
+    `Resumo do Treinamento de Liderança`,
+    ``,
+    `Estudo: ${selectedTraining?.title || "Não informado"}`,
+    `Módulo ${module.number}: ${module.title}`,
+    `Participante: ${leaderName}`,
+    `E-mail: ${state.leader?.email || state.email || "Não informado"}`,
+  ];
+
+  if (departmentNames) {
+    lines.push(`Departamentos: ${departmentNames}`);
+  }
+
+  lines.push("");
+
+  module.questions.forEach((question) => {
+    lines.push(`${question.title}: ${(state.answers[question.id] || "").trim() || "Sem resposta"}`);
   });
 
   return lines.join("\n");
@@ -1115,8 +1218,7 @@ function renderSuccess() {
       <div class="panel-body">
         <div class="summary">
           <article class="summary-item">
-            <h3>Participante</h3>
-            <p>${escapeHtml(state.leader?.name || state.selectedLeaderName || getSelectedLeader()?.name || "Não informado")}</p>
+            ${getMemberIdentityMarkup({ showEmail: Boolean(state.leaders.length) })}
           </article>
           ${departmentSummary}
           <article class="summary-item">
@@ -1150,6 +1252,7 @@ function renderSuccess() {
     state.currentModuleIndex = -1;
     state.answers = {};
     state.submitted = false;
+    state.submissionId = "";
     state.leaderStatus = "idle";
     saveDraft();
     render();
@@ -1162,6 +1265,57 @@ function getSelectedLeader() {
     state.leaders[0] ||
     null
   );
+}
+
+function getMemberIdentityMarkup({ showEmail = true } = {}) {
+  const name =
+    state.leader?.name || state.selectedLeaderName || getSelectedLeader()?.name || "Não informado";
+  const photoUrl = state.leader?.photoUrl || "";
+  const photoMarkup = photoUrl
+    ? `<img class="member-photo" src="${escapeHtml(photoUrl)}" alt="Foto de ${escapeHtml(name)}" />`
+    : `<span class="member-photo member-photo-fallback" aria-hidden="true">${escapeHtml(getPersonInitials(name))}</span>`;
+  const emailMarkup = showEmail
+    ? `<p>${escapeHtml(state.leader?.email || state.email || "")}</p>`
+    : "";
+
+  return `
+    <div class="member-identity">
+      ${photoMarkup}
+      <div class="member-details">
+        <h3>${escapeHtml(name)}</h3>
+        ${emailMarkup}
+      </div>
+    </div>
+  `;
+}
+
+function getPersonInitials(name) {
+  const words = String(name || "")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+
+  return (words.length ? words : ["U"])
+    .slice(0, 2)
+    .map((word) => word[0])
+    .join("")
+    .toUpperCase();
+}
+
+function getOrCreateSubmissionId() {
+  if (!state.submissionId) {
+    state.submissionId = createSubmissionId();
+  }
+
+  return state.submissionId;
+}
+
+function createSubmissionId() {
+  if (window.crypto?.randomUUID) {
+    return window.crypto.randomUUID();
+  }
+
+  return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
 function getDepartmentNames() {
@@ -1382,6 +1536,9 @@ function restoreDraft() {
         ? draftModuleIndex
         : -1;
     state.answers = draft.answers || {};
+    state.submissionId = draft.submissionId || "";
+    state.isSavingModule = false;
+    state.isSubmitting = false;
   } catch {
     clearDraft();
   }
@@ -1402,6 +1559,7 @@ function saveDraft() {
     trainingDraft: state.trainingDraft,
     currentModuleIndex: state.currentModuleIndex,
     answers: state.answers,
+    submissionId: state.submissionId,
   };
   localStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
 }

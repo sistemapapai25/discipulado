@@ -33,11 +33,53 @@ export default async function handler(req, res) {
     const whatsappSummary = payload.resumo_whatsapp
       ? String(payload.resumo_whatsapp)
       : null;
+    const recordType = payload.metadados?.tipo_registro
+      ? String(payload.metadados.tipo_registro)
+      : "";
+    const submissionId = payload.metadados?.envio_id
+      ? String(payload.metadados.envio_id)
+      : "";
+    const moduleId = payload.modulo?.id ? String(payload.modulo.id) : "";
 
     if (!leaderId || !leaderName || !studyId || !studyTitle) {
       return res.status(400).json({
         error: "Payload incompleto para salvar a resposta do discipulado.",
       });
+    }
+
+    if (recordType === "modulo" && submissionId && moduleId) {
+      const [existing] = await sql`
+        select id
+        from respostas_discipulado
+        where lider_id = ${leaderId}
+          and estudo_id = ${studyId}
+          and payload->'metadados'->>'tipo_registro' = 'modulo'
+          and payload->'metadados'->>'envio_id' = ${submissionId}
+          and payload->'modulo'->>'id' = ${moduleId}
+        order by created_at desc
+        limit 1
+      `;
+
+      if (existing) {
+        const [updated] = await sql`
+          update respostas_discipulado
+          set
+            lider_nome = ${leaderName},
+            ministerio = ${ministry},
+            estudo_titulo = ${studyTitle},
+            respostas = ${JSON.stringify(payload.respostas)}::jsonb,
+            resumo_whatsapp = ${whatsappSummary},
+            payload = ${JSON.stringify(payload)}::jsonb
+          where id = ${existing.id}
+          returning id
+        `;
+
+        return res.status(200).json({
+          ok: true,
+          id: updated.id,
+          updated: true,
+        });
+      }
     }
 
     const [saved] = await sql`

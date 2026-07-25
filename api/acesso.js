@@ -75,6 +75,7 @@ export default async function handler(req, res) {
         id: String(person.id),
         email: person.email || email,
         name: getPersonName(person),
+        photoUrl: getPersonPhotoUrl(person),
       },
       ministries,
     });
@@ -90,7 +91,7 @@ async function findActivePersonByEmail(supabase, email) {
   const { data, error } = await supabase
     .from("user_account")
     .select(
-      "id,email,full_name,first_name,last_name,nickname,is_active,role_global,status,member_type",
+      "id,email,full_name,first_name,last_name,nickname,is_active,role_global,status,member_type,avatar_url,photo_url,foto",
     )
     .ilike("email", email)
     .eq("is_active", true)
@@ -169,6 +170,12 @@ function getPersonName(person) {
     person.nickname ||
     "Usuário sem nome"
   );
+}
+
+function getPersonPhotoUrl(person) {
+  return [person.photo_url, person.avatar_url, person.foto]
+    .map((value) => (typeof value === "string" ? value.trim() : ""))
+    .find(Boolean) || "";
 }
 
 function sortDepartments(firstDepartment, secondDepartment) {

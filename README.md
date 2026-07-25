@@ -95,4 +95,4 @@ Por padrao, a funcao de acesso consulta:
 
 O app chama `/api/acesso`, que libera o acesso quando encontra o e-mail em `user_account` com `is_active = true`. Depois disso, tenta carregar departamentos por `ministry_member` e `ministry` apenas para exibicao. A falta de departamento nao bloqueia o acesso nem o envio das respostas.
 
-As respostas do questionario sao gravadas somente no Neon pela funcao `api/salvar.js`.
+As respostas do questionario sao gravadas somente no Neon pela funcao `api/salvar.js`. Durante o treinamento, cada modulo respondido gera ou atualiza um registro proprio do envio atual, identificado por `payload.metadados.tipo_registro = "modulo"` e `payload.metadados.envio_id`.

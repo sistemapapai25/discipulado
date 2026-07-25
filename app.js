@@ -451,7 +451,6 @@ function renderModule(module) {
     )
     .join("");
 
-  const isFirst = state.currentModuleIndex === 0;
   const isLast =
     state.currentModuleIndex === getSelectedTraining().modules.length - 1;
   const videoMarkup = getVideoMarkup(module);
@@ -472,7 +471,8 @@ function renderModule(module) {
           ${questions}
         </div>
         <div class="actions split">
-          <button class="btn secondary" type="button" data-action="previous" ${isFirst ? "disabled" : ""}>Voltar</button>
+          <button class="btn secondary" type="button" data-action="previous">Voltar</button>
+          <button class="btn secondary" type="button" data-action="menu">Menu principal</button>
           ${
             isLast
               ? `<button class="btn" type="button" data-action="submit" ${state.isSubmitting ? "disabled" : ""}>${state.isSubmitting ? "Enviando..." : "Concluir e Enviar Respostas"}</button>
@@ -538,10 +538,21 @@ function bindModuleEvents() {
     ?.addEventListener("click", () => {
       if (state.currentModuleIndex > 0) {
         state.currentModuleIndex -= 1;
-        saveDraft();
-        render();
-        window.scrollTo({ top: 0, behavior: "smooth" });
+      } else {
+        state.currentModuleIndex = -1;
       }
+      saveDraft();
+      render();
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    });
+
+  document
+    .querySelector("[data-action='menu']")
+    ?.addEventListener("click", () => {
+      state.currentModuleIndex = -1;
+      saveDraft();
+      render();
+      window.scrollTo({ top: 0, behavior: "smooth" });
     });
 
   document.querySelector("[data-action='next']")?.addEventListener("click", () => {

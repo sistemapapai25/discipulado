@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Treinamento de Liderança | Discipulado</title>
+    <meta
+      name="description"
+      content="WebApp para treinamento de liderança da igreja com vídeos, questionário e envio de respostas."
+    />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar" aria-label="Progresso do treinamento">
+        <div class="topbar-main">
+          <div>
+            <p class="eyebrow">Treinamento de Liderança</p>
+            <h1 id="studyTitle">Discipulado</h1>
+          </div>
+          <span class="progress-count" id="progressLabel">Início</span>
+        </div>
+        <div class="progress-track" aria-hidden="true">
+          <span class="progress-fill" id="progressFill"></span>
+        </div>
+      </header>
+
+      <main class="workspace" id="app" aria-live="polite"></main>
+    </div>
+
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="./app.js" defer></script>
+  </body>
+</html>

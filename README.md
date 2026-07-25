@@ -1,6 +1,6 @@
 # Discipulado Lideres
 
-WebApp mobile-first para treinamento de lideranca da igreja, com modulos em video, questionario, envio para API Serverless na Vercel e contingencia por WhatsApp.
+WebApp mobile-first para treinamento de lideranca da igreja, com modulos em video, questionario, leitura de lideres no Supabase church360, envio para API Serverless na Vercel e contingencia por WhatsApp.
 
 ## Arquivos principais
 
@@ -53,10 +53,14 @@ create table if not exists respostas_discipulado (
 
 ## Supabase church360
 
-Por padrao, o front-end consulta a tabela `lideres` com os campos:
+O Supabase church360 e usado apenas como fonte de leitura dos lideres ativos. Nenhuma tabela nova precisa ser criada no Supabase.
 
-```txt
-id,nome,ministerio,ativo
-```
+Por padrao, o front-end consulta:
 
-Se a tabela tiver outro nome ou colunas diferentes, ajuste `SUPABASE_CONFIG` em `app.js`.
+- `ministry_member`
+- `user_account`
+- `ministry`
+
+O app filtra membros com `role` igual a `leader` ou `coordinator`, com `user_account.is_active = true` e `ministry.is_active = true`.
+
+As respostas do questionario sao gravadas somente no Neon pela funcao `api/salvar.js`.

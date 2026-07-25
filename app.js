@@ -3,11 +3,25 @@
 const SUPABASE_CONFIG = {
   url: "COLE_AQUI_SUPABASE_URL_DO_CHURCH360",
   anonKey: "COLE_AQUI_SUPABASE_ANON_KEY_DO_CHURCH360",
-  leadersTable: "lideres",
-  leadersSelect: "id,nome,ministerio,ativo",
-  activeColumn: "ativo",
-  activeValue: true,
-  orderBy: "nome",
+  membershipTable: "ministry_member",
+  leaderRoles: ["leader", "coordinator"],
+  leadersSelect: `
+    id,
+    role,
+    user_account!inner (
+      id,
+      full_name,
+      first_name,
+      last_name,
+      nickname,
+      is_active
+    ),
+    ministry!inner (
+      id,
+      name,
+      is_active
+    )
+  `,
 };
 
 const API_ENDPOINT = "/api/salvar";
@@ -174,16 +188,20 @@ async function loadLeaders() {
     }
 
     const { data, error } = await supabaseClient
-      .from(SUPABASE_CONFIG.leadersTable)
+      .from(SUPABASE_CONFIG.membershipTable)
       .select(SUPABASE_CONFIG.leadersSelect)
-      .eq(SUPABASE_CONFIG.activeColumn, SUPABASE_CONFIG.activeValue)
-      .order(SUPABASE_CONFIG.orderBy, { ascending: true });
+      .in("role", SUPABASE_CONFIG.leaderRoles)
+      .eq("user_account.is_active", true)
+      .eq("ministry.is_active", true);
 
     if (error) {
       throw error;
     }
 
-    state.leaders = (data || []).map(normalizeLeader);
+    state.leaders = (data || [])
+      .map(normalizeLeader)
+      .filter(Boolean)
+      .sort(sortLeaders);
     state.leaderStatus = "loaded";
 
     if (state.selectedLeaderId) {
@@ -221,11 +239,35 @@ function createSupabaseClient() {
 }
 
 function normalizeLeader(leader) {
+  const person = leader.user_account;
+  const ministry = leader.ministry;
+
+  if (!person?.id || !ministry?.id) {
+    return null;
+  }
+
+  const name =
+    person.full_name ||
+    [person.first_name, person.last_name].filter(Boolean).join(" ") ||
+    person.nickname ||
+    "Líder sem nome";
+  const ministryName = ministry.name || "Ministério não informado";
+
   return {
     id: String(leader.id),
-    name: leader.nome || leader.name || "Líder sem nome",
-    ministry: leader.ministerio || leader.ministry || "",
+    userId: String(person.id),
+    ministryId: String(ministry.id),
+    name,
+    ministry: ministryName,
+    role: leader.role || "",
+    label: `${name} - ${ministryName}`,
   };
+}
+
+function sortLeaders(firstLeader, secondLeader) {
+  return firstLeader.label.localeCompare(secondLeader.label, "pt-BR", {
+    sensitivity: "base",
+  });
 }
 
 function render() {
@@ -262,7 +304,7 @@ function renderIntro() {
   const leaderOptions = state.leaders
     .map((leader) => {
       const selected = leader.id === state.selectedLeaderId ? "selected" : "";
-      return `<option value="${escapeHtml(leader.id)}" ${selected}>${escapeHtml(leader.name)}</option>`;
+      return `<option value="${escapeHtml(leader.id)}" ${selected}>${escapeHtml(leader.label || leader.name)}</option>`;
     })
     .join("");
 
@@ -381,7 +423,7 @@ function getLeaderSelectLabel() {
 
 function getLeaderStatusText() {
   if (state.leaderStatus === "loading") {
-    return "Buscando líderes ativos no Supabase church360.";
+    return "Buscando líderes e coordenadores ativos no Supabase church360.";
   }
 
   if (state.leaderStatus === "loaded") {
@@ -391,7 +433,7 @@ function getLeaderStatusText() {
   }
 
   if (state.leaderStatus === "error") {
-    return "Preencha as credenciais do Supabase em app.js e confira o nome da tabela de líderes.";
+    return "Preencha as credenciais do Supabase em app.js e confira as permissões de leitura das tabelas ministry_member, user_account e ministry.";
   }
 
   return "A lista será carregada automaticamente.";
@@ -610,8 +652,11 @@ function buildPayload() {
       pregador: ACTIVE_STUDY.speaker,
     },
     lider: {
-      id: selectedLeader?.id || state.selectedLeaderId,
+      id: selectedLeader?.userId || state.selectedLeaderId,
       nome: selectedLeader?.name || state.selectedLeaderName,
+      vinculo_ministerio_id: selectedLeader?.id || state.selectedLeaderId,
+      ministerio_id: selectedLeader?.ministryId || null,
+      papel: selectedLeader?.role || null,
     },
     ministerio: state.ministry.trim(),
     respostas: ACTIVE_STUDY.modules.map((module) => ({

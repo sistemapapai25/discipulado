@@ -1,8 +1,8 @@
 "use strict";
 
 const SUPABASE_CONFIG = {
-  url: "COLE_AQUI_SUPABASE_URL_DO_CHURCH360",
-  anonKey: "COLE_AQUI_SUPABASE_ANON_KEY_DO_CHURCH360",
+  url: "https://heswheljavpcyspuicsi.supabase.co/rest/v1/",
+  anonKey: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imhlc3doZWxqYXZwY3lzcHVpY3NpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDk3NDc4NDMsImV4cCI6MjA2NTMyMzg0M30.JcGUOFynclGhrLRuZbiGMXsNviMLLBSLZ4l89HgDvNg",
   membershipTable: "ministry_member",
   leaderRoles: ["leader", "coordinator"],
   leadersSelect: `

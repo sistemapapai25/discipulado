@@ -24,6 +24,7 @@ const state = {
   ministry: "",
   selectedTrainingId: "",
   creatorMode: false,
+  editingTrainingId: "",
   trainingDraft: createEmptyTrainingDraft(),
   currentModuleIndex: -1,
   answers: {},
@@ -70,7 +71,7 @@ function getPageTitle() {
   }
 
   if (state.creatorMode) {
-    return "Criar assunto";
+    return state.editingTrainingId ? "Editar assunto" : "Criar assunto";
   }
 
   if (state.currentModuleIndex < 0) {
@@ -201,6 +202,7 @@ function render() {
 
   if (!state.leader) {
     state.creatorMode = false;
+    state.editingTrainingId = "";
     renderLogin();
     return;
   }
@@ -331,6 +333,7 @@ function renderMainMenu() {
 
         <div class="actions">
           <button class="btn secondary" type="button" data-action="create-training">Criar assunto</button>
+          <button class="btn secondary" type="button" data-action="edit-training" ${selectedTraining ? "" : "disabled"}>Editar assunto</button>
           <button class="btn secondary" type="button" data-action="change-email">Sair</button>
           <button class="btn" type="button" data-action="start" ${canStart ? "" : "disabled"}>Iniciar treinamento</button>
         </div>
@@ -391,8 +394,28 @@ function bindMainMenuEvents() {
     .querySelector("[data-action='create-training']")
     ?.addEventListener("click", () => {
       state.creatorMode = true;
+      state.editingTrainingId = "";
       state.currentModuleIndex = -1;
       state.trainingDraft = createEmptyTrainingDraft();
+      saveDraft();
+      render();
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    });
+
+  document
+    .querySelector("[data-action='edit-training']")
+    ?.addEventListener("click", () => {
+      const selectedTraining = getSelectedTraining();
+
+      if (!selectedTraining) {
+        showToast("Selecione um assunto para editar.", "error");
+        return;
+      }
+
+      state.creatorMode = true;
+      state.editingTrainingId = selectedTraining.id;
+      state.currentModuleIndex = -1;
+      state.trainingDraft = createTrainingDraftFromTraining(selectedTraining);
       saveDraft();
       render();
       window.scrollTo({ top: 0, behavior: "smooth" });
@@ -471,6 +494,7 @@ function getTrainingStatusText() {
 
 function renderTrainingBuilder() {
   const draft = state.trainingDraft;
+  const isEditing = Boolean(state.editingTrainingId);
   const modulesMarkup = draft.modules
     .map((module, moduleIndex) => {
       const questionsMarkup = module.questions
@@ -545,9 +569,9 @@ function renderTrainingBuilder() {
   app.innerHTML = `
     <section class="panel">
       <div class="panel-header">
-        <p class="eyebrow">Novo assunto</p>
-        <h2>Criar discipulado</h2>
-        <p>Monte o assunto com módulos, vídeos e perguntas. Depois de salvar, ele aparecerá no menu de seleção.</p>
+        <p class="eyebrow">${isEditing ? "Editar assunto" : "Novo assunto"}</p>
+        <h2>${isEditing ? "Editar discipulado" : "Criar discipulado"}</h2>
+        <p>${isEditing ? "Atualize os módulos, links de vídeo e perguntas. Depois de salvar, o assunto será atualizado para todos." : "Monte o assunto com módulos, vídeos e perguntas. Depois de salvar, ele aparecerá no menu de seleção."}</p>
       </div>
       <div class="panel-body">
         <div class="form-grid">
@@ -573,7 +597,7 @@ function renderTrainingBuilder() {
         <div class="actions split">
           <button class="btn secondary" type="button" data-action="cancel-training">Voltar ao menu</button>
           <button class="btn" type="button" data-action="save-training" ${state.isSavingTraining ? "disabled" : ""}>
-            ${state.isSavingTraining ? "Salvando..." : "Salvar assunto"}
+            ${state.isSavingTraining ? "Salvando..." : isEditing ? "Salvar alterações" : "Salvar assunto"}
           </button>
         </div>
       </div>
@@ -827,6 +851,7 @@ function bindTrainingBuilderEvents() {
     .querySelector("[data-action='cancel-training']")
     ?.addEventListener("click", () => {
       state.creatorMode = false;
+      state.editingTrainingId = "";
       state.isSavingTraining = false;
       saveDraft();
       render();
@@ -848,14 +873,17 @@ async function saveTraining() {
   state.isSavingTraining = true;
   render();
 
+  const isEditing = Boolean(state.editingTrainingId);
+
   try {
     const response = await fetch(SUBJECTS_ENDPOINT, {
-      method: "POST",
+      method: isEditing ? "PUT" : "POST",
       headers: {
         Accept: "application/json",
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
+        id: state.editingTrainingId || undefined,
         ...state.trainingDraft,
         creator: state.leader,
       }),
@@ -874,12 +902,16 @@ async function saveTraining() {
     state.selectedTrainingId = training.id;
     state.trainingDraft = createEmptyTrainingDraft();
     state.creatorMode = false;
+    state.editingTrainingId = "";
     state.isSavingTraining = false;
     state.currentModuleIndex = -1;
     state.answers = {};
     state.trainingStatus = "loaded";
     saveDraft();
-    showToast("Assunto salvo com sucesso.", "success");
+    showToast(
+      isEditing ? "Assunto atualizado com sucesso." : "Assunto salvo com sucesso.",
+      "success",
+    );
     render();
     window.scrollTo({ top: 0, behavior: "smooth" });
   } catch (error) {
@@ -1112,6 +1144,7 @@ function renderSuccess() {
     state.ministry = "";
     state.selectedTrainingId = "";
     state.creatorMode = false;
+    state.editingTrainingId = "";
     state.trainingDraft = createEmptyTrainingDraft();
     state.currentModuleIndex = -1;
     state.answers = {};
@@ -1162,6 +1195,35 @@ function createEmptyTrainingDraft() {
   };
 }
 
+function createTrainingDraftFromTraining(training) {
+  const modules = Array.isArray(training?.modules) && training.modules.length
+    ? training.modules
+    : [createEmptyModuleDraft()];
+
+  return {
+    title: String(training?.title || ""),
+    speaker: String(training?.speaker || ""),
+    modules: modules.map((module) => ({
+      title: String(module?.title || ""),
+      videoUrl:
+        String(module?.videoUrl || "") ||
+        buildYoutubeWatchUrl(module?.videoId || training?.youtubeVideoId || ""),
+      startTime:
+        formatSecondsToTimeInput(module?.start) ||
+        getTimeLabelPart(module?.timeLabel, 0),
+      endTime:
+        formatSecondsToTimeInput(module?.end) ||
+        getTimeLabelPart(module?.timeLabel, 1),
+      questions:
+        Array.isArray(module?.questions) && module.questions.length
+          ? module.questions.map((question) => ({
+              text: String(question?.text || ""),
+            }))
+          : [createEmptyQuestionDraft()],
+    })),
+  };
+}
+
 function createEmptyModuleDraft() {
   return {
     title: "",
@@ -1174,6 +1236,36 @@ function createEmptyModuleDraft() {
 
 function createEmptyQuestionDraft() {
   return { text: "" };
+}
+
+function buildYoutubeWatchUrl(videoId) {
+  const value = String(videoId || "").trim();
+  return value ? `https://www.youtube.com/watch?v=${value}` : "";
+}
+
+function formatSecondsToTimeInput(seconds) {
+  const totalSeconds = Number(seconds);
+
+  if (!Number.isFinite(totalSeconds) || totalSeconds <= 0) {
+    return "";
+  }
+
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const remainingSeconds = Math.floor(totalSeconds % 60);
+  const secondsLabel = String(remainingSeconds).padStart(2, "0");
+
+  if (hours > 0) {
+    return `${hours}:${String(minutes).padStart(2, "0")}:${secondsLabel}`;
+  }
+
+  return `${minutes}:${secondsLabel}`;
+}
+
+function getTimeLabelPart(timeLabel, index) {
+  const parts = String(timeLabel || "").split(/\s+a\s+/i);
+  const value = parts[index]?.trim() || "";
+  return value === "Vídeo completo" ? "" : value;
 }
 
 function syncTrainingDraftFromForm() {
@@ -1246,6 +1338,11 @@ function restoreDraft() {
       ? draft.selectedTrainingId
       : state.trainings[0]?.id || "";
     state.creatorMode = Boolean(draft.creatorMode);
+    state.editingTrainingId = getAllTrainings().some(
+      (training) => training.id === draft.editingTrainingId,
+    )
+      ? draft.editingTrainingId
+      : "";
     state.trainingDraft = draft.trainingDraft?.modules
       ? draft.trainingDraft
       : createEmptyTrainingDraft();
@@ -1274,6 +1371,7 @@ function saveDraft() {
     ministry: state.ministry,
     selectedTrainingId: state.selectedTrainingId,
     creatorMode: state.creatorMode,
+    editingTrainingId: state.editingTrainingId,
     trainingDraft: state.trainingDraft,
     currentModuleIndex: state.currentModuleIndex,
     answers: state.answers,

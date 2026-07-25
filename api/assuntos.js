@@ -1,8 +1,8 @@
 import { neon } from "@neondatabase/serverless";
 
 export default async function handler(req, res) {
-  if (!["GET", "POST"].includes(req.method)) {
-    res.setHeader("Allow", "GET, POST");
+  if (!["GET", "POST", "PUT"].includes(req.method)) {
+    res.setHeader("Allow", "GET, POST, PUT");
     return res.status(405).json({ error: "Método não permitido." });
   }
 
@@ -35,8 +35,41 @@ export default async function handler(req, res) {
     }
 
     const payload = typeof req.body === "string" ? JSON.parse(req.body) : req.body;
-    const training = normalizeTrainingPayload(payload);
+    const isEditing = req.method === "PUT";
+    const training = normalizeTrainingPayload(payload, { keepId: isEditing });
     const creator = payload?.creator || {};
+
+    if (isEditing) {
+      const [saved] = await sql`
+        update assuntos_discipulado
+        set
+          titulo = ${training.title},
+          pregador = ${training.speaker},
+          youtube_video_id = ${training.youtubeVideoId || null},
+          modulos = ${JSON.stringify(training.modules)}::jsonb,
+          payload = ${JSON.stringify(payload)}::jsonb,
+          updated_at = now()
+        where id = ${training.id}
+        returning
+          id,
+          titulo,
+          pregador,
+          youtube_video_id,
+          modulos,
+          created_at
+      `;
+
+      if (!saved) {
+        return res.status(404).json({
+          error: "Assunto não encontrado para atualização.",
+        });
+      }
+
+      return res.status(200).json({
+        ok: true,
+        training: rowToTraining(saved),
+      });
+    }
 
     const [saved] = await sql`
       insert into assuntos_discipulado (
@@ -94,13 +127,18 @@ export default async function handler(req, res) {
   }
 }
 
-function normalizeTrainingPayload(payload) {
+function normalizeTrainingPayload(payload, options = {}) {
   const title = String(payload?.title || "").trim();
   const speaker = String(payload?.speaker || "").trim();
   const rawModules = Array.isArray(payload?.modules) ? payload.modules : [];
+  const existingId = String(payload?.id || "").trim();
 
   if (!title) {
     throw new Error("Informe o título do assunto.");
+  }
+
+  if (options.keepId && !existingId) {
+    throw new Error("Informe o ID do assunto para editar.");
   }
 
   if (!rawModules.length) {
@@ -114,7 +152,7 @@ function normalizeTrainingPayload(payload) {
   }
 
   return {
-    id: makeTrainingId(title),
+    id: options.keepId ? existingId : makeTrainingId(title),
     title,
     speaker,
     youtubeVideoId: extractYoutubeVideoId(payload?.youtubeVideoUrl || ""),

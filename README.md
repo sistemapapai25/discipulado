@@ -8,7 +8,7 @@ WebApp mobile-first para treinamento de lideranca da igreja, com modulos em vide
 - `styles.css`: layout responsivo e estilo visual.
 - `app.js`: configuracao do estudo, fluxo dos modulos e envio.
 - `api/acesso.js`: Vercel Serverless Function que valida o e-mail do lider no Supabase church360.
-- `api/assuntos.js`: Vercel Serverless Function que lista e cria assuntos de discipulado no Neon.
+- `api/assuntos.js`: Vercel Serverless Function que lista, cria e edita assuntos de discipulado no Neon.
 - `api/salvar.js`: Vercel Serverless Function que grava no Neon.
 - `sql/seed-assunto-gloria.sql`: insert inicial do assunto "Aumentando os Niveis de Gloria" no Neon.
 
@@ -81,7 +81,7 @@ Depois de criar a tabela, rode o seed inicial se quiser cadastrar o assunto que 
 -- arquivo: sql/seed-assunto-gloria.sql
 ```
 
-O app nao traz assuntos fixos no front-end. O menu principal carrega os assuntos da tabela `assuntos_discipulado`.
+O app nao traz assuntos fixos no front-end. O menu principal carrega os assuntos da tabela `assuntos_discipulado` e permite criar ou editar os assuntos cadastrados, incluindo links de video, cortes e perguntas.
 
 ## Supabase church360
 

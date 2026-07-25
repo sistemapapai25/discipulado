@@ -1,6 +1,6 @@
 import { neon } from "@neondatabase/serverless";
 
-const REQUIRED_FIELDS = ["estudo", "lider", "ministerio", "respostas"];
+const REQUIRED_FIELDS = ["estudo", "lider", "respostas"];
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
@@ -27,14 +27,14 @@ export default async function handler(req, res) {
     const sql = neon(process.env.DATABASE_URL);
     const leaderId = payload.lider?.id ? String(payload.lider.id) : null;
     const leaderName = payload.lider?.nome ? String(payload.lider.nome) : null;
-    const ministry = String(payload.ministerio || "").trim();
+    const ministry = String(payload.ministerio || "").trim() || "Não informado";
     const studyId = payload.estudo?.id ? String(payload.estudo.id) : null;
     const studyTitle = payload.estudo?.titulo ? String(payload.estudo.titulo) : null;
     const whatsappSummary = payload.resumo_whatsapp
       ? String(payload.resumo_whatsapp)
       : null;
 
-    if (!leaderId || !leaderName || !ministry || !studyId || !studyTitle) {
+    if (!leaderId || !leaderName || !studyId || !studyTitle) {
       return res.status(400).json({
         error: "Payload incompleto para salvar a resposta do discipulado.",
       });

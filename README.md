@@ -85,12 +85,14 @@ O app nao traz assuntos fixos no front-end. O menu principal carrega os assuntos
 
 ## Supabase church360
 
-O Supabase church360 e usado apenas como fonte de validacao do e-mail em usuarios ativos. Nenhuma tabela nova precisa ser criada no Supabase.
+O Supabase church360 e usado como fonte de validacao do e-mail em usuarios ativos e, quando houver, para exibir os departamentos vinculados ao usuario. Nenhuma tabela nova precisa ser criada no Supabase.
 
-Por padrao, o front-end consulta:
+Por padrao, a funcao de acesso consulta:
 
 - `user_account`
+- `ministry_member`
+- `ministry`
 
-O app chama `/api/acesso`, que busca o e-mail em `user_account` com `is_active = true`. O acesso nao depende mais de vinculo em `ministry_member`.
+O app chama `/api/acesso`, que libera o acesso quando encontra o e-mail em `user_account` com `is_active = true`. Depois disso, tenta carregar departamentos por `ministry_member` e `ministry` apenas para exibicao. A falta de departamento nao bloqueia o acesso nem o envio das respostas.
 
 As respostas do questionario sao gravadas somente no Neon pela funcao `api/salvar.js`.

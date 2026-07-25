@@ -132,7 +132,7 @@ async function requestAccess() {
     )
       ? state.selectedLeaderId
       : state.leaders[0]?.id || "";
-    state.ministry = getSelectedLeader()?.ministry || "";
+    state.ministry = getDepartmentNames();
     state.leaderStatus = "loaded";
 
     saveDraft();
@@ -271,15 +271,8 @@ function renderLogin() {
 }
 
 function renderMainMenu() {
-  const selectedLeader = getSelectedLeader();
   const selectedTraining = getSelectedTraining();
-  const canStart = Boolean(state.selectedLeaderId && selectedTraining);
-  const ministryOptions = state.leaders
-    .map((leader) => {
-      const selected = leader.id === state.selectedLeaderId ? "selected" : "";
-      return `<option value="${escapeHtml(leader.id)}" ${selected}>${escapeHtml(leader.label || leader.ministry)}</option>`;
-    })
-    .join("");
+  const canStart = Boolean(state.leader && selectedTraining);
   const allTrainings = getAllTrainings();
   const trainingOptions = allTrainings.map((training) => {
     const selected = training.id === state.selectedTrainingId ? "selected" : "";
@@ -288,28 +281,27 @@ function renderMainMenu() {
   const departmentList = state.leaders
     .map((leader) => `<span class="pill">${escapeHtml(leader.ministry)}</span>`)
     .join("");
+  const departmentMarkup = departmentList
+    ? `<div class="module-meta">${departmentList}</div>`
+    : "";
+  const emailMarkup = state.leaders.length
+    ? `<p>${escapeHtml(state.leader.email || state.email)}</p>`
+    : "";
 
   app.innerHTML = `
     <section class="panel">
       <div class="hero-strip">
         <h2>Menu principal</h2>
-        <p>Escolha o assunto do discipulado, revise seus departamentos e inicie o treinamento.</p>
+        <p>Escolha o assunto do discipulado e inicie o treinamento.</p>
       </div>
       <div class="panel-body">
         <div class="form-grid">
           <div class="summary">
             <article class="summary-item">
               <h3>${escapeHtml(state.leader.name)}</h3>
-              <p>${escapeHtml(state.leader.email || state.email)}</p>
-              <div class="module-meta">${departmentList}</div>
+              ${emailMarkup}
+              ${departmentMarkup}
             </article>
-          </div>
-
-          <div class="field">
-            <label for="leaderSelect">Cadastro para este discipulado</label>
-            <select class="select" id="leaderSelect">
-              ${ministryOptions}
-            </select>
           </div>
 
           <div class="field">
@@ -367,15 +359,6 @@ function bindLoginEvents() {
 }
 
 function bindMainMenuEvents() {
-  document
-    .querySelector("#leaderSelect")
-    ?.addEventListener("change", (event) => {
-      state.selectedLeaderId = event.target.value;
-      state.ministry = getSelectedLeader()?.ministry || "";
-      saveDraft();
-      render();
-    });
-
   document
     .querySelector("#trainingSelect")
     ?.addEventListener("change", (event) => {
@@ -441,15 +424,14 @@ function bindMainMenuEvents() {
   document
     .querySelector("[data-action='start']")
     ?.addEventListener("click", () => {
-      const selectedLeader = getSelectedLeader();
       const selectedTraining = getSelectedTraining();
-      if (!state.leader || !selectedLeader || !selectedTraining) {
+      if (!state.leader || !selectedTraining) {
         showToast("Confirme o e-mail e o assunto.", "error");
         return;
       }
 
       state.selectedLeaderName = state.leader.name;
-      state.ministry = selectedLeader.ministry;
+      state.ministry = getDepartmentNames();
       state.currentModuleIndex = 0;
       saveDraft();
       render();
@@ -467,7 +449,7 @@ function getAccessStatusText() {
   }
 
   if (state.leaderStatus === "loaded") {
-    return "Cadastro ativo encontrado no church360.";
+    return "E-mail validado no church360.";
   }
 
   return "Digite o e-mail usado no cadastro do church360.";
@@ -1019,6 +1001,7 @@ function validateAllAnswers() {
 function buildPayload() {
   const selectedLeader = getSelectedLeader();
   const selectedTraining = getSelectedTraining();
+  const departmentNames = getDepartmentNames();
 
   if (!selectedTraining) {
     throw new Error("Nenhum assunto selecionado.");
@@ -1034,11 +1017,12 @@ function buildPayload() {
       id: selectedLeader?.userId || state.leader?.id || state.selectedLeaderId,
       nome: state.leader?.name || selectedLeader?.name || state.selectedLeaderName,
       email: state.leader?.email || state.email,
-      vinculo_ministerio_id: selectedLeader?.id || state.selectedLeaderId,
+      vinculo_ministerio_id: selectedLeader?.id || null,
       ministerio_id: selectedLeader?.ministryId || null,
       papel: selectedLeader?.role || null,
     },
-    ministerio: state.ministry.trim(),
+    ministerio: departmentNames || "Não informado",
+    departamentos: getDepartmentsForPayload(),
     respostas: selectedTraining.modules.map((module) => ({
       modulo_id: module.id,
       modulo_numero: module.number,
@@ -1064,6 +1048,7 @@ function buildPayload() {
 function buildWhatsappSummary() {
   const selectedLeader = getSelectedLeader();
   const selectedTraining = getSelectedTraining();
+  const departmentNames = getDepartmentNames();
   if (!selectedTraining) {
     return "";
   }
@@ -1074,11 +1059,15 @@ function buildWhatsappSummary() {
     `Resumo do Treinamento de Liderança`,
     ``,
     `Estudo: ${selectedTraining.title}`,
-    `Líder: ${leaderName}`,
+    `Participante: ${leaderName}`,
     `E-mail: ${state.leader?.email || state.email || "Não informado"}`,
-    `Ministério: ${state.ministry.trim() || "Não informado"}`,
-    ``,
   ];
+
+  if (departmentNames) {
+    lines.push(`Departamentos: ${departmentNames}`);
+  }
+
+  lines.push("");
 
   selectedTraining.modules.forEach((module) => {
     lines.push(`Módulo ${module.number}: ${module.title}`);
@@ -1107,6 +1096,14 @@ function sendWhatsappSummary() {
 
 function renderSuccess() {
   const selectedTraining = getSelectedTraining();
+  const departmentNames = getDepartmentNames();
+  const departmentSummary = departmentNames
+    ? `
+          <article class="summary-item">
+            <h3>Departamentos</h3>
+            <p>${escapeHtml(departmentNames)}</p>
+          </article>`
+    : "";
 
   app.innerHTML = `
     <section class="panel">
@@ -1118,13 +1115,10 @@ function renderSuccess() {
       <div class="panel-body">
         <div class="summary">
           <article class="summary-item">
-            <h3>Líder</h3>
+            <h3>Participante</h3>
             <p>${escapeHtml(state.leader?.name || state.selectedLeaderName || getSelectedLeader()?.name || "Não informado")}</p>
           </article>
-          <article class="summary-item">
-            <h3>Ministério</h3>
-            <p>${escapeHtml(state.ministry || "Não informado")}</p>
-          </article>
+          ${departmentSummary}
           <article class="summary-item">
             <h3>Estudo</h3>
             <p>${escapeHtml(selectedTraining?.title || "Não informado")}</p>
@@ -1163,7 +1157,29 @@ function renderSuccess() {
 }
 
 function getSelectedLeader() {
-  return state.leaders.find((leader) => leader.id === state.selectedLeaderId);
+  return (
+    state.leaders.find((leader) => leader.id === state.selectedLeaderId) ||
+    state.leaders[0] ||
+    null
+  );
+}
+
+function getDepartmentNames() {
+  return state.leaders
+    .map((leader) => String(leader.ministry || "").trim())
+    .filter(Boolean)
+    .join(", ");
+}
+
+function getDepartmentsForPayload() {
+  return state.leaders
+    .map((leader) => ({
+      vinculo_ministerio_id: leader.id || null,
+      ministerio_id: leader.ministryId || null,
+      nome: leader.ministry || "",
+      papel: leader.role || null,
+    }))
+    .filter((department) => department.nome);
 }
 
 function getSelectedTraining() {

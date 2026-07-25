@@ -1,17 +1,18 @@
 "use strict";
 
 const API_ENDPOINT = "/api/salvar";
-const LEADERS_ENDPOINT = "/api/lideres";
+const ACCESS_ENDPOINT = "/api/acesso";
 const PASTOR_WHATSAPP_NUMBER = "55COLE_AQUI_NUMERO_DO_PASTOR";
 const YOUTUBE_VIDEO_ID = "COLE_AQUI_YOUTUBE_VIDEO_ID";
 const DRAFT_KEY = "discipulado-lideres-draft-v1";
 
-const ACTIVE_STUDY = {
-  id: "aumentando-niveis-de-gloria-apostolo-jean",
-  title: "Aumentando os Níveis de Glória - Apóstolo Jean",
-  speaker: "Apóstolo Jean",
-  modules: [
-    {
+const TRAININGS = [
+  {
+    id: "aumentando-niveis-de-gloria-apostolo-jean",
+    title: "Aumentando os Níveis de Glória - Apóstolo Jean",
+    speaker: "Apóstolo Jean",
+    modules: [
+      {
       id: "modulo-1",
       number: 1,
       title: "Resgatados de uma Maneira Vã de Viver",
@@ -121,15 +122,19 @@ const ACTIVE_STUDY = {
         },
       ],
     },
-  ],
-};
+    ],
+  },
+];
 
 const state = {
   leaders: [],
   leaderStatus: "idle",
+  leader: null,
+  email: "",
   selectedLeaderId: "",
   selectedLeaderName: "",
   ministry: "",
+  selectedTrainingId: TRAININGS[0].id,
   currentModuleIndex: -1,
   answers: {},
   isSubmitting: false,
@@ -147,42 +152,61 @@ let toastTimeout;
 document.addEventListener("DOMContentLoaded", init);
 
 function init() {
-  studyTitle.textContent = ACTIVE_STUDY.title;
+  studyTitle.textContent = getSelectedTraining().title;
   restoreDraft();
   render();
-  loadLeaders();
 }
 
-async function loadLeaders() {
+async function requestAccess() {
+  const email = state.email.trim().toLowerCase();
+
+  if (!isValidEmail(email)) {
+    showToast("Informe um e-mail válido.", "error");
+    document.querySelector("#emailInput")?.focus();
+    return;
+  }
+
   state.leaderStatus = "loading";
   render();
 
   try {
-    const response = await fetch(LEADERS_ENDPOINT, {
-      headers: { Accept: "application/json" },
+    const response = await fetch(ACCESS_ENDPOINT, {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ email }),
     });
     const result = await response.json().catch(() => ({}));
 
     if (!response.ok) {
-      throw new Error(result.error || "Não foi possível carregar os líderes.");
+      throw new Error(result.error || "Não foi possível validar seu acesso.");
     }
 
-    state.leaders = (result.leaders || [])
+    state.email = email;
+    state.leader = result.leader || null;
+    state.leaders = (result.ministries || [])
       .filter(Boolean)
       .sort(sortLeaders);
+    state.selectedLeaderName = state.leader?.name || "";
+    state.selectedLeaderId = state.leaders.some(
+      (leader) => leader.id === state.selectedLeaderId,
+    )
+      ? state.selectedLeaderId
+      : state.leaders[0]?.id || "";
+    state.ministry = getSelectedLeader()?.ministry || "";
     state.leaderStatus = "loaded";
 
-    if (state.selectedLeaderId) {
-      const selectedLeader = state.leaders.find(
-        (leader) => leader.id === state.selectedLeaderId,
-      );
-      if (selectedLeader) {
-        state.selectedLeaderName = selectedLeader.name;
-      }
-    }
+    saveDraft();
   } catch (error) {
+    state.leader = null;
     state.leaders = [];
+    state.selectedLeaderId = "";
+    state.selectedLeaderName = "";
+    state.ministry = "";
     state.leaderStatus = "error";
+    saveDraft();
     showToast(error.message, "error");
   }
 
@@ -200,6 +224,7 @@ function sortLeaders(firstLeader, secondLeader) {
 
 function render() {
   updateProgress();
+  studyTitle.textContent = getSelectedTraining().title;
 
   if (state.submitted) {
     renderSuccess();
@@ -211,11 +236,11 @@ function render() {
     return;
   }
 
-  renderModule(ACTIVE_STUDY.modules[state.currentModuleIndex]);
+  renderModule(getSelectedTraining().modules[state.currentModuleIndex]);
 }
 
 function updateProgress() {
-  const total = ACTIVE_STUDY.modules.length;
+  const total = getSelectedTraining().modules.length;
   const progress =
     state.currentModuleIndex < 0
       ? 0
@@ -229,15 +254,22 @@ function updateProgress() {
 }
 
 function renderIntro() {
-  const leaderOptions = state.leaders
+  const selectedLeader = getSelectedLeader();
+  const selectedTraining = getSelectedTraining();
+  const hasAccess = Boolean(state.leader);
+  const canStart = Boolean(
+    hasAccess && state.selectedLeaderId && state.selectedTrainingId,
+  );
+  const ministryOptions = state.leaders
     .map((leader) => {
       const selected = leader.id === state.selectedLeaderId ? "selected" : "";
-      return `<option value="${escapeHtml(leader.id)}" ${selected}>${escapeHtml(leader.label || leader.name)}</option>`;
+      return `<option value="${escapeHtml(leader.id)}" ${selected}>${escapeHtml(leader.label || leader.ministry)}</option>`;
     })
     .join("");
-
-  const selectedLeader = getSelectedLeader();
-  const canStart = Boolean(state.selectedLeaderId && state.ministry.trim());
+  const trainingOptions = TRAININGS.map((training) => {
+    const selected = training.id === state.selectedTrainingId ? "selected" : "";
+    return `<option value="${escapeHtml(training.id)}" ${selected}>${escapeHtml(training.title)}</option>`;
+  }).join("");
 
   app.innerHTML = `
     <section class="panel">
@@ -248,37 +280,58 @@ function renderIntro() {
       <div class="panel-body">
         <div class="form-grid">
           <div class="field">
-            <div class="mini-row">
-              <label for="leaderSelect">Selecione o líder ativo</label>
-              <button class="link-button" type="button" data-action="reload-leaders">Atualizar lista</button>
-            </div>
-            <select class="select" id="leaderSelect" ${state.leaderStatus === "loading" ? "disabled" : ""}>
-              <option value="">${getLeaderSelectLabel()}</option>
-              ${leaderOptions}
-            </select>
-            <p class="hint">${getLeaderStatusText()}</p>
+            <label for="emailInput">E-mail cadastrado no church360</label>
+            <input class="input" id="emailInput" type="email" value="${escapeHtml(state.email)}" placeholder="seuemail@exemplo.com" autocomplete="email" ${state.leaderStatus === "loading" || hasAccess ? "disabled" : ""} />
+            <p class="hint">${getAccessStatusText()}</p>
           </div>
 
-          <div class="field">
-            <label for="ministryInput">Ministério que lidera</label>
-            <input class="input" id="ministryInput" type="text" value="${escapeHtml(state.ministry)}" placeholder="Ex: Células, Louvor, Kids, Intercessão" />
-          </div>
+          ${
+            hasAccess
+              ? `
+                <div class="summary">
+                  <article class="summary-item">
+                    <h3>Líder identificado</h3>
+                    <p>${escapeHtml(state.leader.name)}${state.leader.email ? ` | ${escapeHtml(state.leader.email)}` : ""}</p>
+                  </article>
+                </div>
+
+                <div class="field">
+                  <label for="leaderSelect">Ministério vinculado</label>
+                  <select class="select" id="leaderSelect">
+                    ${ministryOptions}
+                  </select>
+                </div>
+
+                <div class="field">
+                  <label for="trainingSelect">Assunto do discipulado</label>
+                  <select class="select" id="trainingSelect">
+                    ${trainingOptions}
+                  </select>
+                </div>
+              `
+              : ""
+          }
 
           <div class="study-confirm">
-            <span>Estudo ativo atual</span>
-            <strong>${escapeHtml(ACTIVE_STUDY.title)}</strong>
-            <span class="hint">${ACTIVE_STUDY.modules.length} módulos com vídeo e questionário integrado.</span>
+            <span>Assunto selecionado</span>
+            <strong>${escapeHtml(selectedTraining.title)}</strong>
+            <span class="hint">${selectedTraining.modules.length} módulos com vídeo e questionário integrado.</span>
           </div>
 
           ${
             selectedLeader
-              ? `<p class="status-line">Líder selecionado: <strong>${escapeHtml(selectedLeader.name)}</strong>${selectedLeader.ministry ? ` | Ministério cadastrado: ${escapeHtml(selectedLeader.ministry)}` : ""}</p>`
+              ? `<p class="status-line">Ministério: <strong>${escapeHtml(selectedLeader.ministry)}</strong></p>`
               : ""
           }
         </div>
 
         <div class="actions">
-          <button class="btn" type="button" data-action="start" ${canStart ? "" : "disabled"}>Iniciar treinamento</button>
+          ${
+            hasAccess
+              ? `<button class="btn secondary" type="button" data-action="change-email">Trocar e-mail</button>
+                 <button class="btn" type="button" data-action="start" ${canStart ? "" : "disabled"}>Iniciar treinamento</button>`
+              : `<button class="btn" type="button" data-action="access" ${state.leaderStatus === "loading" ? "disabled" : ""}>${state.leaderStatus === "loading" ? "Verificando..." : "Acessar treinamento"}</button>`
+          }
         </div>
       </div>
     </section>
@@ -289,40 +342,72 @@ function renderIntro() {
 
 function bindIntroEvents() {
   document
+    .querySelector("#emailInput")
+    ?.addEventListener("input", (event) => {
+      state.email = event.target.value;
+      saveDraft();
+    });
+
+  document
+    .querySelector("#emailInput")
+    ?.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        requestAccess();
+      }
+    });
+
+  document
+    .querySelector("[data-action='access']")
+    ?.addEventListener("click", requestAccess);
+
+  document
     .querySelector("#leaderSelect")
     ?.addEventListener("change", (event) => {
       state.selectedLeaderId = event.target.value;
-      const selectedLeader = getSelectedLeader();
-      state.selectedLeaderName = selectedLeader?.name || "";
-      if (!state.ministry && selectedLeader?.ministry) {
-        state.ministry = selectedLeader.ministry;
-      }
+      state.ministry = getSelectedLeader()?.ministry || "";
       saveDraft();
       render();
     });
 
   document
-    .querySelector("#ministryInput")
-    ?.addEventListener("input", (event) => {
-      state.ministry = event.target.value;
+    .querySelector("#trainingSelect")
+    ?.addEventListener("change", (event) => {
+      state.selectedTrainingId = event.target.value;
+      state.currentModuleIndex = -1;
+      state.answers = {};
       saveDraft();
-      updateStartButtonState();
+      render();
     });
 
   document
-    .querySelector("[data-action='reload-leaders']")
-    ?.addEventListener("click", loadLeaders);
+    .querySelector("[data-action='change-email']")
+    ?.addEventListener("click", () => {
+      state.leader = null;
+      state.leaders = [];
+      state.email = "";
+      state.selectedLeaderId = "";
+      state.selectedLeaderName = "";
+      state.ministry = "";
+      state.currentModuleIndex = -1;
+      state.answers = {};
+      state.submitted = false;
+      state.leaderStatus = "idle";
+      saveDraft();
+      render();
+    });
 
   document
     .querySelector("[data-action='start']")
     ?.addEventListener("click", () => {
       const selectedLeader = getSelectedLeader();
-      if (!selectedLeader || !state.ministry.trim()) {
-        showToast("Selecione o líder e informe o ministério.", "error");
+      if (!state.leader || !selectedLeader || !state.selectedTrainingId) {
+        showToast("Confirme o e-mail, o ministério e o assunto.", "error");
         return;
       }
 
-      state.selectedLeaderName = selectedLeader.name;
+      state.selectedLeaderName = state.leader.name;
+      state.ministry = selectedLeader.ministry;
       state.currentModuleIndex = 0;
       saveDraft();
       render();
@@ -330,41 +415,20 @@ function bindIntroEvents() {
     });
 }
 
-function updateStartButtonState() {
-  const startButton = document.querySelector("[data-action='start']");
-  if (startButton) {
-    startButton.disabled = !(state.selectedLeaderId && state.ministry.trim());
-  }
-}
-
-function getLeaderSelectLabel() {
+function getAccessStatusText() {
   if (state.leaderStatus === "loading") {
-    return "Carregando líderes...";
+    return "Validando seu e-mail no church360.";
   }
 
   if (state.leaderStatus === "error") {
-    return "Configure o Supabase para carregar líderes";
-  }
-
-  return "Escolha um líder";
-}
-
-function getLeaderStatusText() {
-  if (state.leaderStatus === "loading") {
-    return "Buscando líderes e coordenadores ativos no Supabase church360.";
+    return "Não foi possível validar este e-mail como líder ativo.";
   }
 
   if (state.leaderStatus === "loaded") {
-    return state.leaders.length
-      ? `${state.leaders.length} líder(es) ativo(s) carregado(s).`
-      : "Nenhum líder ativo foi encontrado na tabela configurada.";
+    return `${state.leaders.length} ministério(s) de liderança encontrado(s).`;
   }
 
-  if (state.leaderStatus === "error") {
-    return "Confira as variáveis SUPABASE_URL e SUPABASE_ANON_KEY na Vercel e as permissões de leitura no Supabase.";
-  }
-
-  return "A lista será carregada automaticamente.";
+  return "Digite o e-mail usado no cadastro do church360.";
 }
 
 function renderModule(module) {
@@ -388,7 +452,8 @@ function renderModule(module) {
     .join("");
 
   const isFirst = state.currentModuleIndex === 0;
-  const isLast = state.currentModuleIndex === ACTIVE_STUDY.modules.length - 1;
+  const isLast =
+    state.currentModuleIndex === getSelectedTraining().modules.length - 1;
   const videoMarkup = getVideoMarkup(module);
 
   app.innerHTML = `
@@ -535,7 +600,7 @@ async function submitAnswers() {
 }
 
 function validateCurrentModule() {
-  const module = ACTIVE_STUDY.modules[state.currentModuleIndex];
+  const module = getSelectedTraining().modules[state.currentModuleIndex];
   const missing = module.questions.find(
     (question) => !(state.answers[question.id] || "").trim(),
   );
@@ -550,13 +615,14 @@ function validateCurrentModule() {
 }
 
 function validateAllAnswers() {
-  const allQuestions = ACTIVE_STUDY.modules.flatMap((module) => module.questions);
+  const study = getSelectedTraining();
+  const allQuestions = study.modules.flatMap((module) => module.questions);
   const missing = allQuestions.find(
     (question) => !(state.answers[question.id] || "").trim(),
   );
 
   if (missing) {
-    const targetModuleIndex = ACTIVE_STUDY.modules.findIndex((module) =>
+    const targetModuleIndex = study.modules.findIndex((module) =>
       module.questions.some((question) => question.id === missing.id),
     );
     state.currentModuleIndex = targetModuleIndex;
@@ -572,22 +638,24 @@ function validateAllAnswers() {
 
 function buildPayload() {
   const selectedLeader = getSelectedLeader();
+  const selectedTraining = getSelectedTraining();
 
   return {
     estudo: {
-      id: ACTIVE_STUDY.id,
-      titulo: ACTIVE_STUDY.title,
-      pregador: ACTIVE_STUDY.speaker,
+      id: selectedTraining.id,
+      titulo: selectedTraining.title,
+      pregador: selectedTraining.speaker,
     },
     lider: {
-      id: selectedLeader?.userId || state.selectedLeaderId,
-      nome: selectedLeader?.name || state.selectedLeaderName,
+      id: selectedLeader?.userId || state.leader?.id || state.selectedLeaderId,
+      nome: state.leader?.name || selectedLeader?.name || state.selectedLeaderName,
+      email: state.leader?.email || state.email,
       vinculo_ministerio_id: selectedLeader?.id || state.selectedLeaderId,
       ministerio_id: selectedLeader?.ministryId || null,
       papel: selectedLeader?.role || null,
     },
     ministerio: state.ministry.trim(),
-    respostas: ACTIVE_STUDY.modules.map((module) => ({
+    respostas: selectedTraining.modules.map((module) => ({
       modulo_id: module.id,
       modulo_numero: module.number,
       modulo_titulo: module.title,
@@ -611,17 +679,20 @@ function buildPayload() {
 
 function buildWhatsappSummary() {
   const selectedLeader = getSelectedLeader();
-  const leaderName = selectedLeader?.name || state.selectedLeaderName || "Não informado";
+  const selectedTraining = getSelectedTraining();
+  const leaderName =
+    state.leader?.name || selectedLeader?.name || state.selectedLeaderName || "Não informado";
   const lines = [
     `Resumo do Treinamento de Liderança`,
     ``,
-    `Estudo: ${ACTIVE_STUDY.title}`,
+    `Estudo: ${selectedTraining.title}`,
     `Líder: ${leaderName}`,
+    `E-mail: ${state.leader?.email || state.email || "Não informado"}`,
     `Ministério: ${state.ministry.trim() || "Não informado"}`,
     ``,
   ];
 
-  ACTIVE_STUDY.modules.forEach((module) => {
+  selectedTraining.modules.forEach((module) => {
     lines.push(`Módulo ${module.number}: ${module.title}`);
     lines.push(`Corte: ${module.timeLabel}`);
     module.questions.forEach((question) => {
@@ -647,6 +718,8 @@ function sendWhatsappSummary() {
 }
 
 function renderSuccess() {
+  const selectedTraining = getSelectedTraining();
+
   app.innerHTML = `
     <section class="panel">
       <div class="panel-header">
@@ -658,7 +731,7 @@ function renderSuccess() {
         <div class="summary">
           <article class="summary-item">
             <h3>Líder</h3>
-            <p>${escapeHtml(state.selectedLeaderName || getSelectedLeader()?.name || "Não informado")}</p>
+            <p>${escapeHtml(state.leader?.name || state.selectedLeaderName || getSelectedLeader()?.name || "Não informado")}</p>
           </article>
           <article class="summary-item">
             <h3>Ministério</h3>
@@ -666,7 +739,7 @@ function renderSuccess() {
           </article>
           <article class="summary-item">
             <h3>Estudo</h3>
-            <p>${escapeHtml(ACTIVE_STUDY.title)}</p>
+            <p>${escapeHtml(selectedTraining.title)}</p>
           </article>
         </div>
         <div class="actions">
@@ -684,10 +757,15 @@ function renderSuccess() {
   document.querySelector("[data-action='restart']")?.addEventListener("click", () => {
     state.selectedLeaderId = "";
     state.selectedLeaderName = "";
+    state.email = "";
+    state.leader = null;
+    state.leaders = [];
     state.ministry = "";
+    state.selectedTrainingId = TRAININGS[0].id;
     state.currentModuleIndex = -1;
     state.answers = {};
     state.submitted = false;
+    state.leaderStatus = "idle";
     saveDraft();
     render();
   });
@@ -697,17 +775,37 @@ function getSelectedLeader() {
   return state.leaders.find((leader) => leader.id === state.selectedLeaderId);
 }
 
+function getSelectedTraining() {
+  return (
+    TRAININGS.find((training) => training.id === state.selectedTrainingId) ||
+    TRAININGS[0]
+  );
+}
+
+function isValidEmail(email) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+}
+
 function restoreDraft() {
   try {
     const draft = JSON.parse(localStorage.getItem(DRAFT_KEY) || "{}");
+    state.email = draft.email || "";
+    state.leader = draft.leader || null;
+    state.leaders = Array.isArray(draft.leaders) ? draft.leaders : [];
     state.selectedLeaderId = draft.selectedLeaderId || "";
     state.selectedLeaderName = draft.selectedLeaderName || "";
     state.ministry = draft.ministry || "";
+    state.selectedTrainingId = TRAININGS.some(
+      (training) => training.id === draft.selectedTrainingId,
+    )
+      ? draft.selectedTrainingId
+      : TRAININGS[0].id;
     const draftModuleIndex = Number.isInteger(draft.currentModuleIndex)
       ? draft.currentModuleIndex
       : -1;
     state.currentModuleIndex =
-      draftModuleIndex >= -1 && draftModuleIndex < ACTIVE_STUDY.modules.length
+      draftModuleIndex >= -1 &&
+      draftModuleIndex < getSelectedTraining().modules.length
         ? draftModuleIndex
         : -1;
     state.answers = draft.answers || {};
@@ -718,9 +816,13 @@ function restoreDraft() {
 
 function saveDraft() {
   const draft = {
+    email: state.email,
+    leader: state.leader,
+    leaders: state.leaders,
     selectedLeaderId: state.selectedLeaderId,
     selectedLeaderName: state.selectedLeaderName,
     ministry: state.ministry,
+    selectedTrainingId: state.selectedTrainingId,
     currentModuleIndex: state.currentModuleIndex,
     answers: state.answers,
   };

@@ -7,7 +7,7 @@ WebApp mobile-first para treinamento de lideranca da igreja, com modulos em vide
 - `index.html`: estrutura da aplicacao.
 - `styles.css`: layout responsivo e estilo visual.
 - `app.js`: configuracao do estudo, fluxo dos modulos e envio.
-- `api/lideres.js`: Vercel Serverless Function que le lideres ativos do Supabase church360.
+- `api/acesso.js`: Vercel Serverless Function que valida o e-mail do lider no Supabase church360.
 - `api/salvar.js`: Vercel Serverless Function que grava no Neon.
 
 ## Configuracao
@@ -55,7 +55,7 @@ create table if not exists respostas_discipulado (
 
 ## Supabase church360
 
-O Supabase church360 e usado apenas como fonte de leitura dos lideres ativos. Nenhuma tabela nova precisa ser criada no Supabase.
+O Supabase church360 e usado apenas como fonte de validacao do e-mail e leitura dos vinculos ativos de lideranca. Nenhuma tabela nova precisa ser criada no Supabase.
 
 Por padrao, o front-end consulta:
 
@@ -63,6 +63,6 @@ Por padrao, o front-end consulta:
 - `user_account`
 - `ministry`
 
-O app filtra membros com `role` igual a `leader` ou `coordinator`, com `user_account.is_active = true` e `ministry.is_active = true`.
+O app chama `/api/acesso`, que busca o e-mail em `user_account` e filtra vinculos em `ministry_member` com `role` igual a `leader` ou `coordinator`, com `user_account.is_active = true` e `ministry.is_active = true`.
 
 As respostas do questionario sao gravadas somente no Neon pela funcao `api/salvar.js`.

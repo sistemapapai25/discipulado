@@ -73,11 +73,44 @@ select:disabled {
 
 .topbar-main {
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   justify-content: space-between;
   gap: 16px;
   max-width: 980px;
   margin: 0 auto 12px;
+}
+
+.church-brand {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+}
+
+.church-logo,
+.church-logo-image {
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+}
+
+.church-logo {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  background: var(--primary-dark);
+  font-size: 0.86rem;
+  font-weight: 900;
+}
+
+.church-logo-image {
+  object-fit: cover;
+}
+
+.topbar-title {
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 .eyebrow {

@@ -7,129 +7,14 @@ const PASTOR_WHATSAPP_NUMBER = "55COLE_AQUI_NUMERO_DO_PASTOR";
 const YOUTUBE_VIDEO_ID = "COLE_AQUI_YOUTUBE_VIDEO_ID";
 const DRAFT_KEY = "discipulado-lideres-draft-v1";
 
-const TRAININGS = [
-  {
-    id: "aumentando-niveis-de-gloria-apostolo-jean",
-    title: "Aumentando os Níveis de Glória - Apóstolo Jean",
-    speaker: "Apóstolo Jean",
-    modules: [
-      {
-      id: "modulo-1",
-      number: 1,
-      title: "Resgatados de uma Maneira Vã de Viver",
-      timeLabel: "24:58 a 33:23",
-      start: 1498,
-      end: 2003,
-      questions: [
-        {
-          id: "1.1",
-          title: "Pergunta 1.1",
-          text: 'O Apóstolo ensina que fomos resgatados de uma "vã maneira de viver" herdada por tradição. Identifique: que hábitos, mentalidades ou tradições da sua família/passado você sente que ainda tenta arrastar para a sua vida cristã?',
-        },
-        {
-          id: "1.2",
-          title: "Pergunta 1.2",
-          text: "Com suas palavras, o que muda na sua rotina quando você entende que foi comprado por um preço precioso e não pertence mais a si mesmo?",
-        },
-      ],
-    },
-    {
-      id: "modulo-2",
-      number: 2,
-      title: "O que é a Glória de Deus?",
-      timeLabel: "38:51 a 44:28",
-      start: 2331,
-      end: 2668,
-      questions: [
-        {
-          id: "2.1",
-          title: "Pergunta 2.1",
-          text: 'De acordo com o texto de Êxodo 33 citado na pregação, o que é biblicamente a "Glória de Deus"?',
-        },
-        {
-          id: "2.2",
-          title: "Pergunta 2.2",
-          text: 'Olhando para o seu dia a dia (na sua casa, no seu trabalho e com seus amigos), as pessoas têm conseguido enxergar a "face de Deus" nas suas atitudes?',
-        },
-      ],
-    },
-    {
-      id: "modulo-3",
-      number: 3,
-      title: "A Transferência da Glória",
-      timeLabel: "44:28 a 55:27",
-      start: 2668,
-      end: 3327,
-      questions: [
-        {
-          id: "3.1",
-          title: "Pergunta 3.1",
-          text: "No vídeo, o Apóstolo faz uma dinâmica com a igreja. Como a glória do Pai chega até nós hoje?",
-        },
-        {
-          id: "3.2",
-          title: "Pergunta 3.2",
-          text: "Jesus orou para que fôssemos UM para manifestar essa glória. Você tem trabalhado em unidade com a liderança e equipe, ou tem tido a tendência de agir de forma isolada?",
-        },
-      ],
-    },
-    {
-      id: "modulo-4",
-      number: 4,
-      title: "Como Aumentar os Níveis de Glória",
-      timeLabel: "56:43 a 1:13:40",
-      start: 3403,
-      end: 4420,
-      questions: [
-        {
-          id: "4.1",
-          title: "Pergunta 4.1",
-          text: "Segundo João 15:8, de que maneira prática a Igreja devolve a glória para o Pai?",
-        },
-        {
-          id: "4.2",
-          title: "Pergunta 4.2 (Diagnóstico)",
-          text: 'O que significa "dar frutos" na sua vida hoje? Onde você sente que tem dado frutos e em qual área sente que precisa frutificar mais?',
-        },
-        {
-          id: "4.3",
-          title: "Pergunta 4.3 (Bloqueios)",
-          text: 'O que tem sido o principal "bloqueio" ou desculpa que tem impedido você de dar frutos em um novo nível hoje? (Ex: cansaço, tempo, medo, falta de foco, etc.)',
-        },
-      ],
-    },
-    {
-      id: "modulo-5",
-      number: 5,
-      title: "Arrependimento e Desentupindo o Canal",
-      timeLabel: "1:14:02 a 1:38:05",
-      start: 4442,
-      end: 5885,
-      questions: [
-        {
-          id: "5.1",
-          title: "Pergunta 5.1",
-          text: "O Apóstolo ministrou sobre desentupir o canal para ser um rio de águas purificadoras. Que atitude, mudança de caráter ou confissão você precisa fazer hoje para alinhar sua rota com Deus?",
-        },
-        {
-          id: "5.2",
-          title: "Pergunta 5.2",
-          text: "Qual compromisso prático você assume com o Senhor e com a nossa igreja a partir desta semana para exercer sua liderança com excelência?",
-        },
-        {
-          id: "5.3",
-          title: "Pergunta 5.3 (Suporte Pastoral)",
-          text: "Como eu, como seu pastor, posso orar por você ou te apoiar de forma prática nesta nova fase?",
-        },
-      ],
-    },
-    ],
-  },
-];
+const CHURCH_CONFIG = {
+  name: "Nome da Igreja",
+  logoUrl: "",
+};
 
 const state = {
   leaders: [],
-  customTrainings: [],
+  trainings: [],
   leaderStatus: "idle",
   trainingStatus: "idle",
   leader: null,
@@ -137,7 +22,7 @@ const state = {
   selectedLeaderId: "",
   selectedLeaderName: "",
   ministry: "",
-  selectedTrainingId: TRAININGS[0].id,
+  selectedTrainingId: "",
   creatorMode: false,
   trainingDraft: createEmptyTrainingDraft(),
   currentModuleIndex: -1,
@@ -152,16 +37,60 @@ const toast = document.querySelector("#toast");
 const progressFill = document.querySelector("#progressFill");
 const progressLabel = document.querySelector("#progressLabel");
 const studyTitle = document.querySelector("#studyTitle");
+const churchName = document.querySelector("#churchName");
+const churchLogoMark = document.querySelector("#churchLogoMark");
+const churchLogoImage = document.querySelector("#churchLogoImage");
 
 let toastTimeout;
 
 document.addEventListener("DOMContentLoaded", init);
 
 function init() {
-  studyTitle.textContent = getSelectedTraining().title;
+  setupChurchHeader();
   restoreDraft();
   render();
   loadTrainings();
+}
+
+function setupChurchHeader() {
+  churchName.textContent = CHURCH_CONFIG.name;
+  churchLogoMark.textContent = getChurchInitials(CHURCH_CONFIG.name);
+
+  if (CHURCH_CONFIG.logoUrl) {
+    churchLogoImage.src = CHURCH_CONFIG.logoUrl;
+    churchLogoImage.alt = `Logo ${CHURCH_CONFIG.name}`;
+    churchLogoImage.hidden = false;
+    churchLogoMark.hidden = true;
+  }
+}
+
+function getPageTitle() {
+  if (!state.leader) {
+    return "Acesso do líder";
+  }
+
+  if (state.creatorMode) {
+    return "Criar assunto";
+  }
+
+  if (state.currentModuleIndex < 0) {
+    return "Menu principal";
+  }
+
+  return getSelectedTraining()?.title || "Discipulado";
+}
+
+function getChurchInitials(name) {
+  const words = String(name || "Igreja")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+
+  return words
+    .slice(0, 2)
+    .map((word) => word[0])
+    .join("")
+    .toUpperCase();
 }
 
 async function requestAccess() {
@@ -233,16 +162,17 @@ async function loadTrainings() {
       throw new Error(result.error || "Não foi possível carregar os assuntos.");
     }
 
-    state.customTrainings = (result.trainings || [])
+    state.trainings = (result.trainings || [])
       .filter(isValidTraining)
       .sort(sortTrainings);
     state.trainingStatus = result.warning ? "warning" : "loaded";
 
     if (!getAllTrainings().some((training) => training.id === state.selectedTrainingId)) {
-      state.selectedTrainingId = TRAININGS[0].id;
+      state.selectedTrainingId = state.trainings[0]?.id || "";
     }
   } catch (error) {
-    state.customTrainings = [];
+    state.trainings = [];
+    state.selectedTrainingId = "";
     state.trainingStatus = "error";
     showToast(error.message, "error");
   }
@@ -262,134 +192,156 @@ function sortLeaders(firstLeader, secondLeader) {
 
 function render() {
   updateProgress();
-  studyTitle.textContent = getSelectedTraining().title;
-
-  if (state.creatorMode) {
-    renderTrainingBuilder();
-    return;
-  }
+  studyTitle.textContent = getPageTitle();
 
   if (state.submitted) {
     renderSuccess();
     return;
   }
 
-  if (state.currentModuleIndex < 0) {
-    renderIntro();
+  if (!state.leader) {
+    state.creatorMode = false;
+    renderLogin();
     return;
   }
 
-  renderModule(getSelectedTraining().modules[state.currentModuleIndex]);
+  if (state.creatorMode) {
+    renderTrainingBuilder();
+    return;
+  }
+
+  if (state.currentModuleIndex < 0) {
+    renderMainMenu();
+    return;
+  }
+
+  const selectedTraining = getSelectedTraining();
+  if (!selectedTraining) {
+    state.currentModuleIndex = -1;
+    renderMainMenu();
+    return;
+  }
+
+  renderModule(selectedTraining.modules[state.currentModuleIndex]);
 }
 
 function updateProgress() {
-  const total = getSelectedTraining().modules.length;
+  const selectedTraining = getSelectedTraining();
+  const total = selectedTraining?.modules?.length || 1;
   const progress =
-    state.currentModuleIndex < 0
+    state.currentModuleIndex < 0 || !selectedTraining
       ? 0
       : Math.round(((state.currentModuleIndex + 1) / total) * 100);
 
   progressFill.style.width = `${progress}%`;
   progressLabel.textContent =
     state.currentModuleIndex < 0
-      ? "Início"
+      ? state.leader ? "Menu" : "Acesso"
       : `Módulo ${state.currentModuleIndex + 1} de ${total}`;
 }
 
-function renderIntro() {
+function renderLogin() {
+  app.innerHTML = `
+    <section class="panel">
+      <div class="hero-strip">
+        <h2>Acesso ao discipulado de liderança</h2>
+        <p>Entre com o e-mail cadastrado no church360 para acessar seus departamentos e os assuntos disponíveis.</p>
+      </div>
+      <div class="panel-body">
+        <div class="form-grid">
+          <div class="field">
+            <label for="emailInput">E-mail cadastrado no church360</label>
+            <input class="input" id="emailInput" type="email" value="${escapeHtml(state.email)}" placeholder="seuemail@exemplo.com" autocomplete="email" ${state.leaderStatus === "loading" ? "disabled" : ""} />
+            <p class="hint">${getAccessStatusText()}</p>
+          </div>
+        </div>
+
+        <div class="actions">
+          <button class="btn" type="button" data-action="access" ${state.leaderStatus === "loading" ? "disabled" : ""}>
+            ${state.leaderStatus === "loading" ? "Verificando..." : "Entrar"}
+          </button>
+        </div>
+      </div>
+    </section>
+  `;
+
+  bindLoginEvents();
+}
+
+function renderMainMenu() {
   const selectedLeader = getSelectedLeader();
   const selectedTraining = getSelectedTraining();
-  const hasAccess = Boolean(state.leader);
-  const canStart = Boolean(
-    hasAccess && state.selectedLeaderId && state.selectedTrainingId,
-  );
+  const canStart = Boolean(state.selectedLeaderId && selectedTraining);
   const ministryOptions = state.leaders
     .map((leader) => {
       const selected = leader.id === state.selectedLeaderId ? "selected" : "";
       return `<option value="${escapeHtml(leader.id)}" ${selected}>${escapeHtml(leader.label || leader.ministry)}</option>`;
     })
     .join("");
-  const trainingOptions = getAllTrainings().map((training) => {
+  const allTrainings = getAllTrainings();
+  const trainingOptions = allTrainings.map((training) => {
     const selected = training.id === state.selectedTrainingId ? "selected" : "";
-    const sourceLabel = training.source === "neon" ? "Cadastrado" : "Padrão";
-    return `<option value="${escapeHtml(training.id)}" ${selected}>${escapeHtml(training.title)} - ${sourceLabel}</option>`;
+    return `<option value="${escapeHtml(training.id)}" ${selected}>${escapeHtml(training.title)}</option>`;
   }).join("");
+  const departmentList = state.leaders
+    .map((leader) => `<span class="pill">${escapeHtml(leader.ministry)}</span>`)
+    .join("");
 
   app.innerHTML = `
     <section class="panel">
       <div class="hero-strip">
-        <h2>Formação prática para líderes que desejam frutificar com maturidade.</h2>
-        <p>Uma jornada de escuta, unidade e crescimento no exercício da liderança.</p>
+        <h2>Menu principal</h2>
+        <p>Escolha o assunto do discipulado, revise seus departamentos e inicie o treinamento.</p>
       </div>
       <div class="panel-body">
         <div class="form-grid">
-          <div class="field">
-            <label for="emailInput">E-mail cadastrado no church360</label>
-            <input class="input" id="emailInput" type="email" value="${escapeHtml(state.email)}" placeholder="seuemail@exemplo.com" autocomplete="email" ${state.leaderStatus === "loading" || hasAccess ? "disabled" : ""} />
-            <p class="hint">${getAccessStatusText()}</p>
+          <div class="summary">
+            <article class="summary-item">
+              <h3>${escapeHtml(state.leader.name)}</h3>
+              <p>${escapeHtml(state.leader.email || state.email)}</p>
+              <div class="module-meta">${departmentList}</div>
+            </article>
           </div>
 
-          ${
-            hasAccess
-              ? `
-                <div class="summary">
-                  <article class="summary-item">
-                    <h3>Líder identificado</h3>
-                    <p>${escapeHtml(state.leader.name)}${state.leader.email ? ` | ${escapeHtml(state.leader.email)}` : ""}</p>
-                  </article>
-                </div>
+          <div class="field">
+            <label for="leaderSelect">Departamento para este discipulado</label>
+            <select class="select" id="leaderSelect">
+              ${ministryOptions}
+            </select>
+          </div>
 
-                <div class="field">
-                  <label for="leaderSelect">Ministério vinculado</label>
-                  <select class="select" id="leaderSelect">
-                    ${ministryOptions}
-                  </select>
-                </div>
-
-                <div class="field">
-                  <div class="mini-row">
-                    <label for="trainingSelect">Assunto do discipulado</label>
-                    <button class="link-button" type="button" data-action="reload-trainings">Atualizar assuntos</button>
-                  </div>
-                  <select class="select" id="trainingSelect">
-                    ${trainingOptions}
-                  </select>
-                  <p class="hint">${getTrainingStatusText()}</p>
-                </div>
-              `
-              : ""
-          }
+          <div class="field">
+            <div class="mini-row">
+              <label for="trainingSelect">Assunto do discipulado</label>
+              <button class="link-button" type="button" data-action="reload-trainings">Atualizar assuntos</button>
+            </div>
+            <select class="select" id="trainingSelect" ${allTrainings.length ? "" : "disabled"}>
+              <option value="">${allTrainings.length ? "Selecione um assunto" : "Nenhum assunto cadastrado"}</option>
+              ${trainingOptions}
+            </select>
+            <p class="hint">${getTrainingStatusText()}</p>
+          </div>
 
           <div class="study-confirm">
             <span>Assunto selecionado</span>
-            <strong>${escapeHtml(selectedTraining.title)}</strong>
-            <span class="hint">${selectedTraining.modules.length} módulos com vídeo e questionário integrado.</span>
+            <strong>${escapeHtml(selectedTraining?.title || "Nenhum assunto selecionado")}</strong>
+            <span class="hint">${selectedTraining ? `${selectedTraining.modules.length} módulos com vídeo e questionário integrado.` : "Cadastre ou selecione um assunto para iniciar."}</span>
           </div>
-
-          ${
-            selectedLeader
-              ? `<p class="status-line">Ministério: <strong>${escapeHtml(selectedLeader.ministry)}</strong></p>`
-              : ""
-          }
         </div>
 
         <div class="actions">
           <button class="btn secondary" type="button" data-action="create-training">Criar assunto</button>
-          ${
-            hasAccess
-              ? `<button class="btn secondary" type="button" data-action="change-email">Trocar e-mail</button>
-                 <button class="btn" type="button" data-action="start" ${canStart ? "" : "disabled"}>Iniciar treinamento</button>`
-              : `<button class="btn" type="button" data-action="access" ${state.leaderStatus === "loading" ? "disabled" : ""}>${state.leaderStatus === "loading" ? "Verificando..." : "Acessar treinamento"}</button>`
-          }
+          <button class="btn secondary" type="button" data-action="change-email">Sair</button>
+          <button class="btn" type="button" data-action="start" ${canStart ? "" : "disabled"}>Iniciar treinamento</button>
         </div>
       </div>
     </section>
   `;
 
-  bindIntroEvents();
+  bindMainMenuEvents();
 }
 
-function bindIntroEvents() {
+function bindLoginEvents() {
   document
     .querySelector("#emailInput")
     ?.addEventListener("input", (event) => {
@@ -409,7 +361,9 @@ function bindIntroEvents() {
   document
     .querySelector("[data-action='access']")
     ?.addEventListener("click", requestAccess);
+}
 
+function bindMainMenuEvents() {
   document
     .querySelector("#leaderSelect")
     ?.addEventListener("change", (event) => {
@@ -465,7 +419,8 @@ function bindIntroEvents() {
     .querySelector("[data-action='start']")
     ?.addEventListener("click", () => {
       const selectedLeader = getSelectedLeader();
-      if (!state.leader || !selectedLeader || !state.selectedTrainingId) {
+      const selectedTraining = getSelectedTraining();
+      if (!state.leader || !selectedLeader || !selectedTraining) {
         showToast("Confirme o e-mail, o ministério e o assunto.", "error");
         return;
       }
@@ -501,17 +456,17 @@ function getTrainingStatusText() {
   }
 
   if (state.trainingStatus === "error") {
-    return "Não foi possível carregar assuntos do Neon. O assunto padrão continua disponível.";
+    return "Não foi possível carregar assuntos do Neon.";
   }
 
   if (state.trainingStatus === "warning") {
-    return "O assunto padrão está disponível. Crie a tabela no Neon para cadastrar novos assuntos.";
+    return "Crie a tabela no Neon para cadastrar e exibir assuntos.";
   }
 
-  const customCount = state.customTrainings.length;
-  return customCount
-    ? `${customCount} assunto(s) cadastrado(s) no Neon.`
-    : "Nenhum assunto extra cadastrado no Neon.";
+  const count = state.trainings.length;
+  return count
+    ? `${count} assunto(s) cadastrado(s) no Neon.`
+    : "Nenhum assunto cadastrado no Neon.";
 }
 
 function renderTrainingBuilder() {
@@ -730,7 +685,7 @@ function getVideoMarkup(module) {
 function getModuleVideoId(module) {
   return (
     module.videoId ||
-    getSelectedTraining().youtubeVideoId ||
+    getSelectedTraining()?.youtubeVideoId ||
     YOUTUBE_VIDEO_ID ||
     ""
   );
@@ -912,9 +867,9 @@ async function saveTraining() {
     }
 
     const training = result.training;
-    state.customTrainings = [
+    state.trainings = [
       training,
-      ...state.customTrainings.filter((item) => item.id !== training.id),
+      ...state.trainings.filter((item) => item.id !== training.id),
     ].filter(isValidTraining);
     state.selectedTrainingId = training.id;
     state.trainingDraft = createEmptyTrainingDraft();
@@ -970,7 +925,16 @@ async function submitAnswers() {
 }
 
 function validateCurrentModule() {
-  const module = getSelectedTraining().modules[state.currentModuleIndex];
+  const selectedTraining = getSelectedTraining();
+  const module = selectedTraining?.modules[state.currentModuleIndex];
+
+  if (!module) {
+    showToast("Selecione um assunto antes de continuar.", "error");
+    state.currentModuleIndex = -1;
+    render();
+    return false;
+  }
+
   const missing = module.questions.find(
     (question) => !(state.answers[question.id] || "").trim(),
   );
@@ -986,6 +950,13 @@ function validateCurrentModule() {
 
 function validateAllAnswers() {
   const study = getSelectedTraining();
+  if (!study) {
+    showToast("Selecione um assunto antes de enviar.", "error");
+    state.currentModuleIndex = -1;
+    render();
+    return false;
+  }
+
   const allQuestions = study.modules.flatMap((module) => module.questions);
   const missing = allQuestions.find(
     (question) => !(state.answers[question.id] || "").trim(),
@@ -1009,6 +980,10 @@ function validateAllAnswers() {
 function buildPayload() {
   const selectedLeader = getSelectedLeader();
   const selectedTraining = getSelectedTraining();
+
+  if (!selectedTraining) {
+    throw new Error("Nenhum assunto selecionado.");
+  }
 
   return {
     estudo: {
@@ -1050,6 +1025,10 @@ function buildPayload() {
 function buildWhatsappSummary() {
   const selectedLeader = getSelectedLeader();
   const selectedTraining = getSelectedTraining();
+  if (!selectedTraining) {
+    return "";
+  }
+
   const leaderName =
     state.leader?.name || selectedLeader?.name || state.selectedLeaderName || "Não informado";
   const lines = [
@@ -1109,7 +1088,7 @@ function renderSuccess() {
           </article>
           <article class="summary-item">
             <h3>Estudo</h3>
-            <p>${escapeHtml(selectedTraining.title)}</p>
+            <p>${escapeHtml(selectedTraining?.title || "Não informado")}</p>
           </article>
         </div>
         <div class="actions">
@@ -1131,7 +1110,7 @@ function renderSuccess() {
     state.leader = null;
     state.leaders = [];
     state.ministry = "";
-    state.selectedTrainingId = TRAININGS[0].id;
+    state.selectedTrainingId = "";
     state.creatorMode = false;
     state.trainingDraft = createEmptyTrainingDraft();
     state.currentModuleIndex = -1;
@@ -1150,12 +1129,12 @@ function getSelectedLeader() {
 function getSelectedTraining() {
   return (
     getAllTrainings().find((training) => training.id === state.selectedTrainingId) ||
-    TRAININGS[0]
+    null
   );
 }
 
 function getAllTrainings() {
-  return [...TRAININGS, ...state.customTrainings.filter(isValidTraining)];
+  return state.trainings.filter(isValidTraining);
 }
 
 function isValidTraining(training) {
@@ -1255,8 +1234,8 @@ function restoreDraft() {
     state.email = draft.email || "";
     state.leader = draft.leader || null;
     state.leaders = Array.isArray(draft.leaders) ? draft.leaders : [];
-    state.customTrainings = Array.isArray(draft.customTrainings)
-      ? draft.customTrainings.filter(isValidTraining)
+    state.trainings = Array.isArray(draft.trainings)
+      ? draft.trainings.filter(isValidTraining)
       : [];
     state.selectedLeaderId = draft.selectedLeaderId || "";
     state.selectedLeaderName = draft.selectedLeaderName || "";
@@ -1265,7 +1244,7 @@ function restoreDraft() {
       (training) => training.id === draft.selectedTrainingId,
     )
       ? draft.selectedTrainingId
-      : TRAININGS[0].id;
+      : state.trainings[0]?.id || "";
     state.creatorMode = Boolean(draft.creatorMode);
     state.trainingDraft = draft.trainingDraft?.modules
       ? draft.trainingDraft
@@ -1275,7 +1254,7 @@ function restoreDraft() {
       : -1;
     state.currentModuleIndex =
       draftModuleIndex >= -1 &&
-      draftModuleIndex < getSelectedTraining().modules.length
+      draftModuleIndex < (getSelectedTraining()?.modules.length || 0)
         ? draftModuleIndex
         : -1;
     state.answers = draft.answers || {};
@@ -1289,7 +1268,7 @@ function saveDraft() {
     email: state.email,
     leader: state.leader,
     leaders: state.leaders,
-    customTrainings: state.customTrainings,
+    trainings: state.trainings,
     selectedLeaderId: state.selectedLeaderId,
     selectedLeaderName: state.selectedLeaderName,
     ministry: state.ministry,

@@ -8,6 +8,7 @@ WebApp mobile-first para treinamento de lideranca da igreja, com modulos em vide
 - `styles.css`: layout responsivo e estilo visual.
 - `app.js`: configuracao do estudo, fluxo dos modulos e envio.
 - `api/acesso.js`: Vercel Serverless Function que valida o e-mail do lider no Supabase church360.
+- `api/assuntos.js`: Vercel Serverless Function que lista e cria assuntos de discipulado no Neon.
 - `api/salvar.js`: Vercel Serverless Function que grava no Neon.
 
 ## Configuracao
@@ -36,7 +37,7 @@ npx vercel dev
 
 ## Tabela Neon esperada
 
-A funcao `api/salvar.js` espera uma tabela com colunas equivalentes a:
+A funcao `api/salvar.js` espera uma tabela de respostas com colunas equivalentes a:
 
 ```sql
 create table if not exists respostas_discipulado (
@@ -50,6 +51,24 @@ create table if not exists respostas_discipulado (
   resumo_whatsapp text,
   payload jsonb not null,
   created_at timestamptz not null default now()
+);
+```
+
+A funcao `api/assuntos.js` espera uma tabela para os assuntos cadastrados:
+
+```sql
+create table if not exists assuntos_discipulado (
+  id text primary key,
+  titulo text not null,
+  pregador text,
+  youtube_video_id text,
+  modulos jsonb not null,
+  ativo boolean not null default true,
+  criado_por_id text,
+  criado_por_nome text,
+  payload jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
 );
 ```
 

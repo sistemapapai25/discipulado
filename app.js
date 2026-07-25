@@ -2,6 +2,7 @@
 
 const API_ENDPOINT = "/api/salvar";
 const ACCESS_ENDPOINT = "/api/acesso";
+const SUBJECTS_ENDPOINT = "/api/assuntos";
 const PASTOR_WHATSAPP_NUMBER = "55COLE_AQUI_NUMERO_DO_PASTOR";
 const YOUTUBE_VIDEO_ID = "COLE_AQUI_YOUTUBE_VIDEO_ID";
 const DRAFT_KEY = "discipulado-lideres-draft-v1";
@@ -128,16 +129,21 @@ const TRAININGS = [
 
 const state = {
   leaders: [],
+  customTrainings: [],
   leaderStatus: "idle",
+  trainingStatus: "idle",
   leader: null,
   email: "",
   selectedLeaderId: "",
   selectedLeaderName: "",
   ministry: "",
   selectedTrainingId: TRAININGS[0].id,
+  creatorMode: false,
+  trainingDraft: createEmptyTrainingDraft(),
   currentModuleIndex: -1,
   answers: {},
   isSubmitting: false,
+  isSavingTraining: false,
   submitted: false,
 };
 
@@ -155,6 +161,7 @@ function init() {
   studyTitle.textContent = getSelectedTraining().title;
   restoreDraft();
   render();
+  loadTrainings();
 }
 
 async function requestAccess() {
@@ -213,6 +220,37 @@ async function requestAccess() {
   render();
 }
 
+async function loadTrainings() {
+  state.trainingStatus = "loading";
+
+  try {
+    const response = await fetch(SUBJECTS_ENDPOINT, {
+      headers: { Accept: "application/json" },
+    });
+    const result = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+      throw new Error(result.error || "Não foi possível carregar os assuntos.");
+    }
+
+    state.customTrainings = (result.trainings || [])
+      .filter(isValidTraining)
+      .sort(sortTrainings);
+    state.trainingStatus = result.warning ? "warning" : "loaded";
+
+    if (!getAllTrainings().some((training) => training.id === state.selectedTrainingId)) {
+      state.selectedTrainingId = TRAININGS[0].id;
+    }
+  } catch (error) {
+    state.customTrainings = [];
+    state.trainingStatus = "error";
+    showToast(error.message, "error");
+  }
+
+  saveDraft();
+  render();
+}
+
 function sortLeaders(firstLeader, secondLeader) {
   const firstLabel = firstLeader.label || firstLeader.name || "";
   const secondLabel = secondLeader.label || secondLeader.name || "";
@@ -225,6 +263,11 @@ function sortLeaders(firstLeader, secondLeader) {
 function render() {
   updateProgress();
   studyTitle.textContent = getSelectedTraining().title;
+
+  if (state.creatorMode) {
+    renderTrainingBuilder();
+    return;
+  }
 
   if (state.submitted) {
     renderSuccess();
@@ -266,9 +309,10 @@ function renderIntro() {
       return `<option value="${escapeHtml(leader.id)}" ${selected}>${escapeHtml(leader.label || leader.ministry)}</option>`;
     })
     .join("");
-  const trainingOptions = TRAININGS.map((training) => {
+  const trainingOptions = getAllTrainings().map((training) => {
     const selected = training.id === state.selectedTrainingId ? "selected" : "";
-    return `<option value="${escapeHtml(training.id)}" ${selected}>${escapeHtml(training.title)}</option>`;
+    const sourceLabel = training.source === "neon" ? "Cadastrado" : "Padrão";
+    return `<option value="${escapeHtml(training.id)}" ${selected}>${escapeHtml(training.title)} - ${sourceLabel}</option>`;
   }).join("");
 
   app.innerHTML = `
@@ -303,10 +347,14 @@ function renderIntro() {
                 </div>
 
                 <div class="field">
-                  <label for="trainingSelect">Assunto do discipulado</label>
+                  <div class="mini-row">
+                    <label for="trainingSelect">Assunto do discipulado</label>
+                    <button class="link-button" type="button" data-action="reload-trainings">Atualizar assuntos</button>
+                  </div>
                   <select class="select" id="trainingSelect">
                     ${trainingOptions}
                   </select>
+                  <p class="hint">${getTrainingStatusText()}</p>
                 </div>
               `
               : ""
@@ -329,6 +377,7 @@ function renderIntro() {
           ${
             hasAccess
               ? `<button class="btn secondary" type="button" data-action="change-email">Trocar e-mail</button>
+                 <button class="btn secondary" type="button" data-action="create-training">Criar assunto</button>
                  <button class="btn" type="button" data-action="start" ${canStart ? "" : "disabled"}>Iniciar treinamento</button>`
               : `<button class="btn" type="button" data-action="access" ${state.leaderStatus === "loading" ? "disabled" : ""}>${state.leaderStatus === "loading" ? "Verificando..." : "Acessar treinamento"}</button>`
           }
@@ -381,6 +430,21 @@ function bindIntroEvents() {
     });
 
   document
+    .querySelector("[data-action='reload-trainings']")
+    ?.addEventListener("click", loadTrainings);
+
+  document
+    .querySelector("[data-action='create-training']")
+    ?.addEventListener("click", () => {
+      state.creatorMode = true;
+      state.currentModuleIndex = -1;
+      state.trainingDraft = createEmptyTrainingDraft();
+      saveDraft();
+      render();
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    });
+
+  document
     .querySelector("[data-action='change-email']")
     ?.addEventListener("click", () => {
       state.leader = null;
@@ -429,6 +493,139 @@ function getAccessStatusText() {
   }
 
   return "Digite o e-mail usado no cadastro do church360.";
+}
+
+function getTrainingStatusText() {
+  if (state.trainingStatus === "loading") {
+    return "Carregando assuntos cadastrados.";
+  }
+
+  if (state.trainingStatus === "error") {
+    return "Não foi possível carregar assuntos do Neon. O assunto padrão continua disponível.";
+  }
+
+  if (state.trainingStatus === "warning") {
+    return "O assunto padrão está disponível. Crie a tabela no Neon para cadastrar novos assuntos.";
+  }
+
+  const customCount = state.customTrainings.length;
+  return customCount
+    ? `${customCount} assunto(s) cadastrado(s) no Neon.`
+    : "Nenhum assunto extra cadastrado no Neon.";
+}
+
+function renderTrainingBuilder() {
+  const draft = state.trainingDraft;
+  const modulesMarkup = draft.modules
+    .map((module, moduleIndex) => {
+      const questionsMarkup = module.questions
+        .map(
+          (question, questionIndex) => `
+            <article class="question">
+              <div class="mini-row">
+                <label class="question-label" for="question-${moduleIndex}-${questionIndex}">
+                  Pergunta ${moduleIndex + 1}.${questionIndex + 1}
+                </label>
+                <button class="link-button" type="button" data-action="remove-question" data-module-index="${moduleIndex}" data-question-index="${questionIndex}">
+                  Remover
+                </button>
+              </div>
+              <textarea
+                class="textarea"
+                id="question-${moduleIndex}-${questionIndex}"
+                data-question-field
+                data-module-index="${moduleIndex}"
+                data-question-index="${questionIndex}"
+                placeholder="Digite a pergunta que o líder deverá responder."
+              >${escapeHtml(question.text)}</textarea>
+            </article>
+          `,
+        )
+        .join("");
+
+      return `
+        <article class="summary-item">
+          <div class="mini-row">
+            <h3>Módulo ${moduleIndex + 1}</h3>
+            <button class="link-button" type="button" data-action="remove-module" data-module-index="${moduleIndex}">
+              Remover módulo
+            </button>
+          </div>
+
+          <div class="form-grid">
+            <div class="field">
+              <label for="module-title-${moduleIndex}">Título do módulo</label>
+              <input class="input" id="module-title-${moduleIndex}" type="text" value="${escapeHtml(module.title)}" data-module-field="title" data-module-index="${moduleIndex}" placeholder="Ex: Identidade e Chamado" />
+            </div>
+
+            <div class="field">
+              <label for="module-video-${moduleIndex}">Link do vídeo do módulo</label>
+              <input class="input" id="module-video-${moduleIndex}" type="url" value="${escapeHtml(module.videoUrl)}" data-module-field="videoUrl" data-module-index="${moduleIndex}" placeholder="https://youtu.be/..." />
+            </div>
+
+            <div class="form-grid two">
+              <div class="field">
+                <label for="module-start-${moduleIndex}">Início do corte</label>
+                <input class="input" id="module-start-${moduleIndex}" type="text" value="${escapeHtml(module.startTime)}" data-module-field="startTime" data-module-index="${moduleIndex}" placeholder="Ex: 24:58" />
+              </div>
+              <div class="field">
+                <label for="module-end-${moduleIndex}">Fim do corte</label>
+                <input class="input" id="module-end-${moduleIndex}" type="text" value="${escapeHtml(module.endTime)}" data-module-field="endTime" data-module-index="${moduleIndex}" placeholder="Ex: 33:23" />
+              </div>
+            </div>
+
+            <div class="questions">
+              ${questionsMarkup}
+            </div>
+
+            <button class="btn secondary" type="button" data-action="add-question" data-module-index="${moduleIndex}">
+              Adicionar pergunta
+            </button>
+          </div>
+        </article>
+      `;
+    })
+    .join("");
+
+  app.innerHTML = `
+    <section class="panel">
+      <div class="panel-header">
+        <p class="eyebrow">Novo assunto</p>
+        <h2>Criar discipulado</h2>
+        <p>Monte o assunto com módulos, vídeos e perguntas. Depois de salvar, ele aparecerá no menu de seleção.</p>
+      </div>
+      <div class="panel-body">
+        <div class="form-grid">
+          <div class="field">
+            <label for="trainingTitle">Título do assunto</label>
+            <input class="input" id="trainingTitle" type="text" value="${escapeHtml(draft.title)}" data-training-field="title" placeholder="Ex: Fundamentos da Liderança Cristã" />
+          </div>
+
+          <div class="field">
+            <label for="trainingSpeaker">Pregador ou facilitador</label>
+            <input class="input" id="trainingSpeaker" type="text" value="${escapeHtml(draft.speaker)}" data-training-field="speaker" placeholder="Ex: Pastor, apóstolo ou líder responsável" />
+          </div>
+
+          <div class="summary">
+            ${modulesMarkup}
+          </div>
+
+          <button class="btn secondary" type="button" data-action="add-module">
+            Adicionar módulo
+          </button>
+        </div>
+
+        <div class="actions split">
+          <button class="btn secondary" type="button" data-action="cancel-training">Voltar ao menu</button>
+          <button class="btn" type="button" data-action="save-training" ${state.isSavingTraining ? "disabled" : ""}>
+            ${state.isSavingTraining ? "Salvando..." : "Salvar assunto"}
+          </button>
+        </div>
+      </div>
+    </section>
+  `;
+
+  bindTrainingBuilderEvents();
 }
 
 function renderModule(module) {
@@ -488,10 +685,9 @@ function renderModule(module) {
 }
 
 function getVideoMarkup(module) {
+  const videoId = getModuleVideoId(module);
   const hasVideoId =
-    YOUTUBE_VIDEO_ID &&
-    !YOUTUBE_VIDEO_ID.includes("COLE_AQUI") &&
-    YOUTUBE_VIDEO_ID.length >= 8;
+    videoId && !videoId.includes("COLE_AQUI") && videoId.length >= 8;
 
   if (!hasVideoId) {
     return `
@@ -499,7 +695,7 @@ function getVideoMarkup(module) {
         <div class="video-placeholder">
           <div>
             <strong>Player do YouTube preparado</strong>
-            <span>Preencha YOUTUBE_VIDEO_ID em app.js para abrir este corte automaticamente: ${escapeHtml(module.timeLabel)}.</span>
+            <span>Cadastre o link do YouTube para abrir este corte automaticamente: ${escapeHtml(module.timeLabel)}.</span>
           </div>
         </div>
       </div>
@@ -507,22 +703,37 @@ function getVideoMarkup(module) {
   }
 
   const params = new URLSearchParams({
-    start: String(module.start),
-    end: String(module.end),
     rel: "0",
     modestbranding: "1",
   });
+
+  if (module.start > 0) {
+    params.set("start", String(module.start));
+  }
+
+  if (module.end > 0) {
+    params.set("end", String(module.end));
+  }
 
   return `
     <div class="video-frame">
       <iframe
         title="${escapeHtml(module.title)}"
-        src="https://www.youtube.com/embed/${encodeURIComponent(YOUTUBE_VIDEO_ID)}?${params.toString()}"
+        src="https://www.youtube.com/embed/${encodeURIComponent(videoId)}?${params.toString()}"
         allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
         allowfullscreen
       ></iframe>
     </div>
   `;
+}
+
+function getModuleVideoId(module) {
+  return (
+    module.videoId ||
+    getSelectedTraining().youtubeVideoId ||
+    YOUTUBE_VIDEO_ID ||
+    ""
+  );
 }
 
 function bindModuleEvents() {
@@ -573,6 +784,154 @@ function bindModuleEvents() {
   document
     .querySelector("[data-action='whatsapp']")
     ?.addEventListener("click", sendWhatsappSummary);
+}
+
+function bindTrainingBuilderEvents() {
+  document.querySelectorAll("[data-training-field]").forEach((input) => {
+    input.addEventListener("input", (event) => {
+      state.trainingDraft[event.target.dataset.trainingField] = event.target.value;
+      saveDraft();
+    });
+  });
+
+  document.querySelectorAll("[data-module-field]").forEach((input) => {
+    input.addEventListener("input", (event) => {
+      const module = state.trainingDraft.modules[Number(event.target.dataset.moduleIndex)];
+      if (module) {
+        module[event.target.dataset.moduleField] = event.target.value;
+        saveDraft();
+      }
+    });
+  });
+
+  document.querySelectorAll("[data-question-field]").forEach((textarea) => {
+    textarea.addEventListener("input", (event) => {
+      const module = state.trainingDraft.modules[Number(event.target.dataset.moduleIndex)];
+      const question = module?.questions[Number(event.target.dataset.questionIndex)];
+      if (question) {
+        question.text = event.target.value;
+        saveDraft();
+      }
+    });
+  });
+
+  document
+    .querySelector("[data-action='add-module']")
+    ?.addEventListener("click", () => {
+      syncTrainingDraftFromForm();
+      state.trainingDraft.modules.push(createEmptyModuleDraft());
+      saveDraft();
+      render();
+    });
+
+  document.querySelectorAll("[data-action='remove-module']").forEach((button) => {
+    button.addEventListener("click", (event) => {
+      syncTrainingDraftFromForm();
+      const moduleIndex = Number(event.currentTarget.dataset.moduleIndex);
+      if (state.trainingDraft.modules.length === 1) {
+        showToast("Mantenha pelo menos um módulo.", "error");
+        return;
+      }
+      state.trainingDraft.modules.splice(moduleIndex, 1);
+      saveDraft();
+      render();
+    });
+  });
+
+  document.querySelectorAll("[data-action='add-question']").forEach((button) => {
+    button.addEventListener("click", (event) => {
+      syncTrainingDraftFromForm();
+      const module = state.trainingDraft.modules[Number(event.currentTarget.dataset.moduleIndex)];
+      if (module) {
+        module.questions.push(createEmptyQuestionDraft());
+        saveDraft();
+        render();
+      }
+    });
+  });
+
+  document.querySelectorAll("[data-action='remove-question']").forEach((button) => {
+    button.addEventListener("click", (event) => {
+      syncTrainingDraftFromForm();
+      const module = state.trainingDraft.modules[Number(event.currentTarget.dataset.moduleIndex)];
+      const questionIndex = Number(event.currentTarget.dataset.questionIndex);
+      if (!module) {
+        return;
+      }
+      if (module.questions.length === 1) {
+        showToast("Mantenha pelo menos uma pergunta no módulo.", "error");
+        return;
+      }
+      module.questions.splice(questionIndex, 1);
+      saveDraft();
+      render();
+    });
+  });
+
+  document
+    .querySelector("[data-action='cancel-training']")
+    ?.addEventListener("click", () => {
+      state.creatorMode = false;
+      state.isSavingTraining = false;
+      saveDraft();
+      render();
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    });
+
+  document
+    .querySelector("[data-action='save-training']")
+    ?.addEventListener("click", saveTraining);
+}
+
+async function saveTraining() {
+  syncTrainingDraftFromForm();
+
+  if (!validateTrainingDraft()) {
+    return;
+  }
+
+  state.isSavingTraining = true;
+  render();
+
+  try {
+    const response = await fetch(SUBJECTS_ENDPOINT, {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        ...state.trainingDraft,
+        creator: state.leader,
+      }),
+    });
+    const result = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+      throw new Error(result.error || "Não foi possível salvar o assunto.");
+    }
+
+    const training = result.training;
+    state.customTrainings = [
+      training,
+      ...state.customTrainings.filter((item) => item.id !== training.id),
+    ].filter(isValidTraining);
+    state.selectedTrainingId = training.id;
+    state.trainingDraft = createEmptyTrainingDraft();
+    state.creatorMode = false;
+    state.isSavingTraining = false;
+    state.currentModuleIndex = -1;
+    state.answers = {};
+    state.trainingStatus = "loaded";
+    saveDraft();
+    showToast("Assunto salvo com sucesso.", "success");
+    render();
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  } catch (error) {
+    state.isSavingTraining = false;
+    showToast(error.message, "error");
+    render();
+  }
 }
 
 async function submitAnswers() {
@@ -773,6 +1132,8 @@ function renderSuccess() {
     state.leaders = [];
     state.ministry = "";
     state.selectedTrainingId = TRAININGS[0].id;
+    state.creatorMode = false;
+    state.trainingDraft = createEmptyTrainingDraft();
     state.currentModuleIndex = -1;
     state.answers = {};
     state.submitted = false;
@@ -788,9 +1149,100 @@ function getSelectedLeader() {
 
 function getSelectedTraining() {
   return (
-    TRAININGS.find((training) => training.id === state.selectedTrainingId) ||
+    getAllTrainings().find((training) => training.id === state.selectedTrainingId) ||
     TRAININGS[0]
   );
+}
+
+function getAllTrainings() {
+  return [...TRAININGS, ...state.customTrainings.filter(isValidTraining)];
+}
+
+function isValidTraining(training) {
+  return Boolean(
+    training?.id &&
+      training?.title &&
+      Array.isArray(training.modules) &&
+      training.modules.length,
+  );
+}
+
+function sortTrainings(firstTraining, secondTraining) {
+  return String(firstTraining.title || "").localeCompare(
+    String(secondTraining.title || ""),
+    "pt-BR",
+    { sensitivity: "base" },
+  );
+}
+
+function createEmptyTrainingDraft() {
+  return {
+    title: "",
+    speaker: "",
+    modules: [createEmptyModuleDraft()],
+  };
+}
+
+function createEmptyModuleDraft() {
+  return {
+    title: "",
+    videoUrl: "",
+    startTime: "",
+    endTime: "",
+    questions: [createEmptyQuestionDraft()],
+  };
+}
+
+function createEmptyQuestionDraft() {
+  return { text: "" };
+}
+
+function syncTrainingDraftFromForm() {
+  document.querySelectorAll("[data-training-field]").forEach((input) => {
+    state.trainingDraft[input.dataset.trainingField] = input.value;
+  });
+
+  document.querySelectorAll("[data-module-field]").forEach((input) => {
+    const module = state.trainingDraft.modules[Number(input.dataset.moduleIndex)];
+    if (module) {
+      module[input.dataset.moduleField] = input.value;
+    }
+  });
+
+  document.querySelectorAll("[data-question-field]").forEach((textarea) => {
+    const module = state.trainingDraft.modules[Number(textarea.dataset.moduleIndex)];
+    const question = module?.questions[Number(textarea.dataset.questionIndex)];
+    if (question) {
+      question.text = textarea.value;
+    }
+  });
+}
+
+function validateTrainingDraft() {
+  const draft = state.trainingDraft;
+
+  if (!draft.title.trim()) {
+    showToast("Informe o título do assunto.", "error");
+    document.querySelector("#trainingTitle")?.focus();
+    return false;
+  }
+
+  const invalidModuleIndex = draft.modules.findIndex((module) => {
+    const hasTitle = module.title.trim();
+    const hasVideo = module.videoUrl.trim();
+    const hasQuestion = module.questions.some((question) => question.text.trim());
+    return !hasTitle || !hasVideo || !hasQuestion;
+  });
+
+  if (invalidModuleIndex >= 0) {
+    showToast(
+      `Complete o título, o link do vídeo e pelo menos uma pergunta no módulo ${invalidModuleIndex + 1}.`,
+      "error",
+    );
+    return false;
+  }
+
+  return true;
 }
 
 function isValidEmail(email) {
@@ -803,14 +1255,21 @@ function restoreDraft() {
     state.email = draft.email || "";
     state.leader = draft.leader || null;
     state.leaders = Array.isArray(draft.leaders) ? draft.leaders : [];
+    state.customTrainings = Array.isArray(draft.customTrainings)
+      ? draft.customTrainings.filter(isValidTraining)
+      : [];
     state.selectedLeaderId = draft.selectedLeaderId || "";
     state.selectedLeaderName = draft.selectedLeaderName || "";
     state.ministry = draft.ministry || "";
-    state.selectedTrainingId = TRAININGS.some(
+    state.selectedTrainingId = getAllTrainings().some(
       (training) => training.id === draft.selectedTrainingId,
     )
       ? draft.selectedTrainingId
       : TRAININGS[0].id;
+    state.creatorMode = Boolean(draft.creatorMode);
+    state.trainingDraft = draft.trainingDraft?.modules
+      ? draft.trainingDraft
+      : createEmptyTrainingDraft();
     const draftModuleIndex = Number.isInteger(draft.currentModuleIndex)
       ? draft.currentModuleIndex
       : -1;
@@ -830,10 +1289,13 @@ function saveDraft() {
     email: state.email,
     leader: state.leader,
     leaders: state.leaders,
+    customTrainings: state.customTrainings,
     selectedLeaderId: state.selectedLeaderId,
     selectedLeaderName: state.selectedLeaderName,
     ministry: state.ministry,
     selectedTrainingId: state.selectedTrainingId,
+    creatorMode: state.creatorMode,
+    trainingDraft: state.trainingDraft,
     currentModuleIndex: state.currentModuleIndex,
     answers: state.answers,
   };

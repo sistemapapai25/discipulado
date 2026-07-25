@@ -1,13 +1,13 @@
 # Discipulado Lideres
 
-WebApp mobile-first para treinamento de lideranca da igreja, com modulos em video, questionario, leitura de lideres no Supabase church360, envio para API Serverless na Vercel e contingencia por WhatsApp.
+WebApp mobile-first para treinamento de lideranca da igreja, com modulos em video, questionario, validacao de usuarios no Supabase church360, envio para API Serverless na Vercel e contingencia por WhatsApp.
 
 ## Arquivos principais
 
 - `index.html`: estrutura da aplicacao.
 - `styles.css`: layout responsivo e estilo visual.
 - `app.js`: configuracao do estudo, fluxo dos modulos e envio.
-- `api/acesso.js`: Vercel Serverless Function que valida o e-mail do lider no Supabase church360.
+- `api/acesso.js`: Vercel Serverless Function que valida o e-mail do usuario no Supabase church360.
 - `api/assuntos.js`: Vercel Serverless Function que lista, cria e edita assuntos de discipulado no Neon.
 - `api/salvar.js`: Vercel Serverless Function que grava no Neon.
 - `sql/seed-assunto-gloria.sql`: insert inicial do assunto "Aumentando os Niveis de Gloria" no Neon.
@@ -24,7 +24,7 @@ WebApp mobile-first para treinamento de lideranca da igreja, com modulos em vide
    - `DATABASE_URL`
    - `SUPABASE_URL`
    - `SUPABASE_ANON_KEY`
-   - `SUPABASE_SERVICE_ROLE_KEY` somente se as policies anon nao forem suficientes
+   - `SUPABASE_SERVICE_ROLE_KEY` para a funcao serverless ler o church360 sem bloqueio de RLS
 
 3. Instale a dependencia da funcao serverless:
 
@@ -85,14 +85,12 @@ O app nao traz assuntos fixos no front-end. O menu principal carrega os assuntos
 
 ## Supabase church360
 
-O Supabase church360 e usado apenas como fonte de validacao do e-mail e leitura dos vinculos ativos de lideranca. Nenhuma tabela nova precisa ser criada no Supabase.
+O Supabase church360 e usado apenas como fonte de validacao do e-mail em usuarios ativos. Nenhuma tabela nova precisa ser criada no Supabase.
 
 Por padrao, o front-end consulta:
 
-- `ministry_member`
 - `user_account`
-- `ministry`
 
-O app chama `/api/acesso`, que busca o e-mail em `user_account` e filtra vinculos em `ministry_member` com `role` igual a `leader` ou `coordinator`, com `user_account.is_active = true` e `ministry.is_active = true`.
+O app chama `/api/acesso`, que busca o e-mail em `user_account` com `is_active = true`. O acesso nao depende mais de vinculo em `ministry_member`.
 
 As respostas do questionario sao gravadas somente no Neon pela funcao `api/salvar.js`.

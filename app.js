@@ -247,7 +247,7 @@ function renderLogin() {
     <section class="panel">
       <div class="hero-strip">
         <h2>Acesso ao discipulado de liderança</h2>
-        <p>Entre com o e-mail cadastrado no church360 para acessar seus departamentos e os assuntos disponíveis.</p>
+        <p>Entre com o e-mail cadastrado no church360 para acessar os assuntos disponíveis.</p>
       </div>
       <div class="panel-body">
         <div class="form-grid">
@@ -306,7 +306,7 @@ function renderMainMenu() {
           </div>
 
           <div class="field">
-            <label for="leaderSelect">Departamento para este discipulado</label>
+            <label for="leaderSelect">Cadastro para este discipulado</label>
             <select class="select" id="leaderSelect">
               ${ministryOptions}
             </select>
@@ -444,7 +444,7 @@ function bindMainMenuEvents() {
       const selectedLeader = getSelectedLeader();
       const selectedTraining = getSelectedTraining();
       if (!state.leader || !selectedLeader || !selectedTraining) {
-        showToast("Confirme o e-mail, o ministério e o assunto.", "error");
+        showToast("Confirme o e-mail e o assunto.", "error");
         return;
       }
 
@@ -463,11 +463,11 @@ function getAccessStatusText() {
   }
 
   if (state.leaderStatus === "error") {
-    return "Não foi possível validar este e-mail como líder ativo.";
+    return "Não foi possível validar este e-mail como usuário ativo.";
   }
 
   if (state.leaderStatus === "loaded") {
-    return `${state.leaders.length} ministério(s) de liderança encontrado(s).`;
+    return "Cadastro ativo encontrado no church360.";
   }
 
   return "Digite o e-mail usado no cadastro do church360.";

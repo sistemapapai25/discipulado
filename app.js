@@ -443,7 +443,6 @@ function renderMainMenu() {
               <option value="">${allTrainings.length ? "Selecione um assunto" : "Nenhum assunto cadastrado"}</option>
               ${trainingOptions}
             </select>
-            <p class="hint">${getTrainingStatusText()}</p>
           </div>
 
           <div class="study-confirm">
@@ -664,25 +663,6 @@ function getAccessStatusText() {
   }
 
   return "Digite o e-mail usado no cadastro do church360.";
-}
-
-function getTrainingStatusText() {
-  if (state.trainingStatus === "loading") {
-    return "Carregando assuntos cadastrados.";
-  }
-
-  if (state.trainingStatus === "error") {
-    return "Não foi possível carregar assuntos do Neon.";
-  }
-
-  if (state.trainingStatus === "warning") {
-    return "Crie a tabela no Neon para cadastrar e exibir assuntos.";
-  }
-
-  const count = state.trainings.length;
-  return count
-    ? `${count} assunto(s) cadastrado(s) no Neon.`
-    : "Nenhum assunto cadastrado no Neon.";
 }
 
 function renderTrainingBuilder() {

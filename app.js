@@ -409,8 +409,8 @@ function renderMainMenu() {
           ${getChurchLogoMarkup("main-menu-logo")}
           <span>${escapeHtml(CHURCH_CONFIG.name)}</span>
         </div>
-        <h2>Menu principal</h2>
-        <p>Escolha o assunto do discipulado e inicie o discipulado.</p>
+        <h2>Menu Principal</h2>
+        <p>Escolha o assunto e inicie o Discipulado.</p>
       </div>
       <div class="panel-body">
         <div class="form-grid">
@@ -423,7 +423,7 @@ function renderMainMenu() {
 
           <div class="field">
             <div class="mini-row">
-              <label for="trainingSelect">Assunto do discipulado</label>
+              <label for="trainingSelect">Assunto do Discipulado</label>
               <button class="link-button" type="button" data-action="reload-trainings">Atualizar assuntos</button>
             </div>
             <select class="select" id="trainingSelect" ${allTrainings.length ? "" : "disabled"}>

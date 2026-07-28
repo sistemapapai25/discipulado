@@ -1,4 +1,5 @@
 import { neon } from "@neondatabase/serverless";
+import { randomUUID } from "node:crypto";
 
 const REQUIRED_FIELDS = ["estudo", "lider", "respostas"];
 
@@ -25,6 +26,7 @@ export default async function handler(req, res) {
     }
 
     const sql = neon(process.env.DATABASE_URL);
+    await ensureResponsesTable(sql);
     const leaderId = payload.lider?.id ? String(payload.lider.id) : null;
     const leaderName = payload.lider?.nome ? String(payload.lider.nome) : null;
     const ministry = String(payload.ministerio || "").trim() || "Não informado";
@@ -84,6 +86,7 @@ export default async function handler(req, res) {
 
     const [saved] = await sql`
       insert into respostas_discipulado (
+        id,
         lider_id,
         lider_nome,
         ministerio,
@@ -94,6 +97,7 @@ export default async function handler(req, res) {
         payload
       )
       values (
+        ${randomUUID()},
         ${leaderId},
         ${leaderName},
         ${ministry},
@@ -113,7 +117,55 @@ export default async function handler(req, res) {
   } catch (error) {
     console.error("Erro ao salvar respostas_discipulado", error);
     return res.status(500).json({
-      error: "Não foi possível salvar as respostas.",
+      error: getSaveErrorMessage(error),
     });
   }
+}
+
+async function ensureResponsesTable(sql) {
+  await sql`
+    create table if not exists respostas_discipulado (
+      id text primary key default md5(random()::text || clock_timestamp()::text),
+      lider_id text not null,
+      lider_nome text not null,
+      ministerio text not null,
+      estudo_id text not null,
+      estudo_titulo text not null,
+      respostas jsonb not null,
+      resumo_whatsapp text,
+      payload jsonb not null default '{}'::jsonb,
+      created_at timestamptz not null default now()
+    )
+  `;
+
+  await sql`
+    alter table respostas_discipulado
+      add column if not exists lider_id text,
+      add column if not exists lider_nome text,
+      add column if not exists ministerio text,
+      add column if not exists estudo_id text,
+      add column if not exists estudo_titulo text,
+      add column if not exists respostas jsonb,
+      add column if not exists resumo_whatsapp text,
+      add column if not exists payload jsonb default '{}'::jsonb,
+      add column if not exists created_at timestamptz default now()
+  `;
+}
+
+function getSaveErrorMessage(error) {
+  if (error?.code === "42501") {
+    return "Sem permissão no Neon para gravar ou ajustar a tabela respostas_discipulado.";
+  }
+
+  if (error?.code === "42P01") {
+    return "Tabela respostas_discipulado não encontrada no Neon.";
+  }
+
+  if (error?.code === "42703") {
+    return "A tabela respostas_discipulado está com colunas incompatíveis.";
+  }
+
+  return error?.message
+    ? `Não foi possível salvar as respostas: ${error.message}`
+    : "Não foi possível salvar as respostas.";
 }

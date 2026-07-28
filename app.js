@@ -363,7 +363,7 @@ function renderMainMenu() {
         <div class="actions">
           ${adminActionsMarkup}
           <button class="btn secondary" type="button" data-action="change-email">Sair</button>
-          <button class="btn" type="button" data-action="start" ${canStart ? "" : "disabled"}>Iniciar treinamento</button>
+          <button class="btn" type="button" data-action="start" ${canStart ? "" : "disabled"}>Iniciar Disicipulado</button>
         </div>
       </div>
     </section>

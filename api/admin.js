@@ -1,6 +1,7 @@
 import {
   createAdminToken,
   isAdminPasswordConfigured,
+  verifyAdminEmail,
   verifyAdminPassword,
 } from "./admin-auth.js";
 
@@ -26,6 +27,12 @@ export default async function handler(req, res) {
 
   if (!verifyAdminPassword(payload?.password)) {
     return res.status(401).json({ error: "Senha inválida." });
+  }
+
+  if (!verifyAdminEmail(payload?.email)) {
+    return res.status(403).json({
+      error: "Edição de assuntos disponível apenas para o administrador.",
+    });
   }
 
   res.setHeader("Cache-Control", "no-store");

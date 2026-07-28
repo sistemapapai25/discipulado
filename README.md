@@ -8,7 +8,7 @@ WebApp mobile-first para discipulado da igreja, com modulos em video, questionar
 - `styles.css`: layout responsivo e estilo visual.
 - `app.js`: configuracao do estudo, fluxo dos modulos e envio.
 - `api/acesso.js`: Vercel Serverless Function que valida o e-mail do usuario no Supabase church360.
-- `api/admin.js`: Vercel Serverless Function que valida a senha administrativa para criar e editar estudos.
+- `api/admin.js`: Vercel Serverless Function que valida a senha administrativa para criar e editar assuntos.
 - `api/assuntos.js`: Vercel Serverless Function que lista, cria e edita assuntos de discipulado no Neon.
 - `api/salvar.js`: Vercel Serverless Function que grava no Neon.
 - `sql/seed-assunto-gloria.sql`: insert inicial do assunto "Aumentando os Niveis de Gloria" no Neon.
@@ -18,6 +18,7 @@ WebApp mobile-first para discipulado da igreja, com modulos em video, questionar
 1. Em `app.js`, preencha:
    - `CHURCH_CONFIG.name`
    - `CHURCH_CONFIG.logoUrl`
+   - `ADMIN_ALLOWED_EMAILS` para controlar quais e-mails veem a opcao de liberar edicao no menu
    - `YOUTUBE_VIDEO_ID`
 
 2. Na Vercel, configure as variaveis de ambiente:
@@ -25,7 +26,8 @@ WebApp mobile-first para discipulado da igreja, com modulos em video, questionar
    - `SUPABASE_URL`
    - `SUPABASE_ANON_KEY`
    - `SUPABASE_SERVICE_ROLE_KEY` para a funcao serverless ler o church360 sem bloqueio de RLS
-   - `STUDY_ADMIN_PASSWORD` para liberar os botoes de criar e editar estudos
+   - `STUDY_ADMIN_PASSWORD` para liberar os botoes de criar e editar assuntos
+   - `STUDY_ADMIN_EMAILS` opcional, com os e-mails autorizados a liberar edicao; por padrao usa `apbergpapai@gmail.com`
    - `STUDY_ADMIN_TOKEN_SECRET` opcional, para assinar o token temporario de edicao
 
 3. Instale a dependencia da funcao serverless:
@@ -82,7 +84,7 @@ Depois de criar a tabela, rode o seed inicial se quiser cadastrar o assunto que 
 -- arquivo: sql/seed-assunto-gloria.sql
 ```
 
-O app nao traz assuntos fixos no front-end. O menu principal carrega os assuntos da tabela `assuntos_discipulado`. Os botoes de criar e editar estudos so aparecem depois da senha administrativa ser validada pela funcao `/api/admin`, e `POST`/`PUT` em `/api/assuntos` tambem exigem token administrativo.
+O app nao traz assuntos fixos no front-end. O menu principal carrega os assuntos da tabela `assuntos_discipulado`. A opcao de liberar edicao so aparece para e-mails administrativos. Depois da senha ser validada pela funcao `/api/admin`, os botoes de criar e editar assuntos ficam disponiveis, e `POST`/`PUT` em `/api/assuntos` tambem exigem token administrativo.
 
 ## Supabase church360
 

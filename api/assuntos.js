@@ -47,7 +47,7 @@ export default async function handler(req, res) {
 
     if (!verifyAdminToken(getAdminTokenFromRequest(req))) {
       return res.status(401).json({
-        error: "Informe a senha administrativa para criar ou editar estudos.",
+        error: "Informe a senha administrativa para criar ou editar assuntos.",
       });
     }
 

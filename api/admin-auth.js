@@ -2,6 +2,7 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 
 const TOKEN_TTL_MS = 12 * 60 * 60 * 1000;
 const TOKEN_CLOCK_SKEW_MS = 5 * 60 * 1000;
+const DEFAULT_ADMIN_EMAILS = ["apbergpapai@gmail.com"];
 
 export function isAdminPasswordConfigured() {
   return Boolean(getAdminPassword());
@@ -15,6 +16,13 @@ export function verifyAdminPassword(password) {
   }
 
   return safeCompare(String(password || ""), expectedPassword);
+}
+
+export function verifyAdminEmail(email) {
+  const normalizedEmail = normalizeEmail(email);
+  return Boolean(
+    normalizedEmail && getAllowedAdminEmails().includes(normalizedEmail),
+  );
 }
 
 export function createAdminToken(now = Date.now()) {
@@ -59,6 +67,21 @@ function getAdminSecret() {
     process.env.ADMIN_SESSION_SECRET ||
     getAdminPassword()
   );
+}
+
+function getAllowedAdminEmails() {
+  const configuredEmails =
+    process.env.STUDY_ADMIN_EMAILS || process.env.STUDY_ADMIN_EMAIL || "";
+  const emails = configuredEmails
+    .split(/[,\s;]+/)
+    .map(normalizeEmail)
+    .filter(Boolean);
+
+  return emails.length ? emails : DEFAULT_ADMIN_EMAILS;
+}
+
+function normalizeEmail(email) {
+  return String(email || "").trim().toLowerCase();
 }
 
 function safeCompare(firstValue, secondValue) {

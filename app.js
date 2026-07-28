@@ -6,6 +6,7 @@ const ADMIN_ENDPOINT = "/api/admin";
 const SUBJECTS_ENDPOINT = "/api/assuntos";
 const YOUTUBE_VIDEO_ID = "COLE_AQUI_YOUTUBE_VIDEO_ID";
 const DRAFT_KEY = "discipulado-lideres-draft-v1";
+const ADMIN_ALLOWED_EMAILS = ["apbergpapai@gmail.com"];
 
 const CHURCH_CONFIG = {
   name: "Igreja Apostólica e Profética Águas Purificadoras",
@@ -155,6 +156,9 @@ async function requestAccess() {
       : state.leaders[0]?.id || "";
     state.ministry = getDepartmentNames();
     state.leaderStatus = "loaded";
+    if (!canManageSubjects()) {
+      resetAdminAccess();
+    }
     await loadSavedAnswersForSelectedTraining();
 
     saveDraft();
@@ -268,6 +272,13 @@ function sortLeaders(firstLeader, secondLeader) {
 }
 
 function render() {
+  if (
+    !canManageSubjects() &&
+    (state.adminUnlocked || state.adminToken || state.creatorMode || state.editingTrainingId)
+  ) {
+    resetAdminAccess();
+  }
+
   updateProgress();
   studyTitle.textContent = getPageTitle();
   updateTopbarVisibility();
@@ -391,16 +402,18 @@ function renderMainMenu() {
     : state.isLoadingSavedAnswers
       ? `<span class="hint">Carregando respostas salvas.</span>`
       : "";
-  const adminActionsMarkup = state.adminUnlocked
-    ? `
-          <button class="btn secondary" type="button" data-action="create-training">Criar estudo</button>
-          <button class="btn secondary" type="button" data-action="edit-training" ${selectedTraining ? "" : "disabled"}>Editar estudo</button>
-        `
-    : `
-          <button class="btn secondary" type="button" data-action="unlock-admin" ${state.isCheckingAdmin ? "disabled" : ""}>
-            ${state.isCheckingAdmin ? "Validando..." : "Liberar edição"}
-          </button>
-        `;
+  const adminActionsMarkup = canManageSubjects()
+    ? state.adminUnlocked
+      ? `
+            <button class="btn secondary" type="button" data-action="create-training">Criar assunto</button>
+            <button class="btn secondary" type="button" data-action="edit-training" ${selectedTraining ? "" : "disabled"}>Editar assunto</button>
+          `
+      : `
+            <button class="btn secondary" type="button" data-action="unlock-admin" ${state.isCheckingAdmin ? "disabled" : ""}>
+              ${state.isCheckingAdmin ? "Validando..." : "Liberar edição"}
+            </button>
+          `
+    : "";
 
   app.innerHTML = `
     <section class="panel">
@@ -500,8 +513,8 @@ function bindMainMenuEvents() {
   document
     .querySelector("[data-action='create-training']")
     ?.addEventListener("click", () => {
-      if (!state.adminUnlocked) {
-        showToast("Informe a senha para criar estudos.", "error");
+      if (!state.adminUnlocked || !canManageSubjects()) {
+        showToast("Informe a senha para criar assuntos.", "error");
         return;
       }
 
@@ -517,8 +530,8 @@ function bindMainMenuEvents() {
   document
     .querySelector("[data-action='edit-training']")
     ?.addEventListener("click", () => {
-      if (!state.adminUnlocked) {
-        showToast("Informe a senha para editar estudos.", "error");
+      if (!state.adminUnlocked || !canManageSubjects()) {
+        showToast("Informe a senha para editar assuntos.", "error");
         return;
       }
 
@@ -581,7 +594,14 @@ function bindMainMenuEvents() {
 }
 
 async function requestAdminAccess() {
-  const password = window.prompt("Digite a senha para liberar criação e edição de estudos.");
+  if (!canManageSubjects()) {
+    resetAdminAccess();
+    showToast("Edição de assuntos disponível apenas para o administrador.", "error");
+    render();
+    return;
+  }
+
+  const password = window.prompt("Digite a senha para liberar criação e edição de assuntos.");
 
   if (password === null) {
     return;
@@ -602,7 +622,10 @@ async function requestAdminAccess() {
         Accept: "application/json",
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ password }),
+      body: JSON.stringify({
+        email: getLoggedUserEmail(),
+        password,
+      }),
     });
     const result = await response.json().catch(() => ({}));
 
@@ -616,7 +639,7 @@ async function requestAdminAccess() {
 
     state.adminToken = result.token;
     state.adminUnlocked = true;
-    showToast("Edição de estudos liberada.", "success");
+    showToast("Edição de assuntos liberada.", "success");
   } catch (error) {
     state.adminToken = "";
     state.adminUnlocked = false;
@@ -1029,9 +1052,17 @@ function bindTrainingBuilderEvents() {
 }
 
 async function saveTraining() {
+  if (!canManageSubjects()) {
+    resetAdminAccess();
+    showToast("Edição de assuntos disponível apenas para o administrador.", "error");
+    state.creatorMode = false;
+    render();
+    return;
+  }
+
   if (!state.adminToken) {
     state.adminUnlocked = false;
-    showToast("Informe a senha para salvar estudos.", "error");
+    showToast("Informe a senha para salvar assuntos.", "error");
     state.creatorMode = false;
     render();
     return;
@@ -1417,6 +1448,24 @@ function getSelectedLeader() {
     state.leaders[0] ||
     null
   );
+}
+
+function getLoggedUserEmail() {
+  return String(state.leader?.email || state.email || "").trim().toLowerCase();
+}
+
+function canManageSubjects() {
+  const email = getLoggedUserEmail();
+  return Boolean(state.leader && email && ADMIN_ALLOWED_EMAILS.includes(email));
+}
+
+function resetAdminAccess() {
+  state.adminUnlocked = false;
+  state.adminToken = "";
+  state.isCheckingAdmin = false;
+  state.creatorMode = false;
+  state.editingTrainingId = "";
+  state.isSavingTraining = false;
 }
 
 function getMemberIdentityMarkup({ showEmail = true } = {}) {

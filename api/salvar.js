@@ -67,6 +67,7 @@ export default async function handler(req, res) {
           update respostas_discipulado
           set
             lider_nome = ${leaderName},
+            nome_lider = ${leaderName},
             ministerio = ${ministry},
             estudo_titulo = ${studyTitle},
             respostas = ${JSON.stringify(payload.respostas)}::jsonb,
@@ -89,6 +90,7 @@ export default async function handler(req, res) {
         id,
         lider_id,
         lider_nome,
+        nome_lider,
         ministerio,
         estudo_id,
         estudo_titulo,
@@ -99,6 +101,7 @@ export default async function handler(req, res) {
       values (
         ${randomUUID()},
         ${leaderId},
+        ${leaderName},
         ${leaderName},
         ${ministry},
         ${studyId},
@@ -142,6 +145,7 @@ async function ensureResponsesTable(sql) {
     alter table respostas_discipulado
       add column if not exists lider_id text,
       add column if not exists lider_nome text,
+      add column if not exists nome_lider text,
       add column if not exists ministerio text,
       add column if not exists estudo_id text,
       add column if not exists estudo_titulo text,

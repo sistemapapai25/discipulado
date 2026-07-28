@@ -105,7 +105,9 @@ select:disabled {
 }
 
 .church-logo-image {
-  object-fit: cover;
+  padding: 4px;
+  object-fit: contain;
+  background: #fff;
 }
 
 .topbar-title {
@@ -221,6 +223,30 @@ h1 {
   margin: 8px 0 0;
   color: rgba(255, 255, 255, 0.88);
   line-height: 1.45;
+}
+
+.main-menu-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  max-width: 100%;
+  margin-bottom: 16px;
+  color: #fff;
+  font-size: 0.95rem;
+  font-weight: 900;
+}
+
+.main-menu-logo {
+  width: 58px;
+  height: 58px;
+  border: 2px solid rgba(255, 255, 255, 0.72);
+  background: rgba(255, 255, 255, 0.16);
+  box-shadow: 0 10px 26px rgba(14, 78, 68, 0.22);
+}
+
+.main-menu-logo.church-logo-image {
+  padding: 6px;
+  background: #fff;
 }
 
 .form-grid {

@@ -1,4 +1,9 @@
 import { neon } from "@neondatabase/serverless";
+import {
+  getAdminTokenFromRequest,
+  isAdminPasswordConfigured,
+  verifyAdminToken,
+} from "./admin-auth.js";
 
 export default async function handler(req, res) {
   if (!["GET", "POST", "PUT"].includes(req.method)) {
@@ -31,6 +36,18 @@ export default async function handler(req, res) {
 
       return res.status(200).json({
         trainings: rows.map(rowToTraining).filter(Boolean),
+      });
+    }
+
+    if (!isAdminPasswordConfigured()) {
+      return res.status(500).json({
+        error: "Configure STUDY_ADMIN_PASSWORD nas variáveis de ambiente da Vercel.",
+      });
+    }
+
+    if (!verifyAdminToken(getAdminTokenFromRequest(req))) {
+      return res.status(401).json({
+        error: "Informe a senha administrativa para criar ou editar estudos.",
       });
     }
 

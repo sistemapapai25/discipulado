@@ -2,14 +2,15 @@
 
 const API_ENDPOINT = "/api/salvar";
 const ACCESS_ENDPOINT = "/api/acesso";
+const ADMIN_ENDPOINT = "/api/admin";
 const SUBJECTS_ENDPOINT = "/api/assuntos";
 const PASTOR_WHATSAPP_NUMBER = "55COLE_AQUI_NUMERO_DO_PASTOR";
 const YOUTUBE_VIDEO_ID = "COLE_AQUI_YOUTUBE_VIDEO_ID";
 const DRAFT_KEY = "discipulado-lideres-draft-v1";
 
 const CHURCH_CONFIG = {
-  name: "Nome da Igreja",
-  logoUrl: "",
+  name: "Igreja Apostólica e Profética Águas Purificadoras",
+  logoUrl: "assets/logo-igreja.png",
 };
 
 const state = {
@@ -31,6 +32,9 @@ const state = {
   isSubmitting: false,
   isSavingModule: false,
   isSavingTraining: false,
+  isCheckingAdmin: false,
+  adminUnlocked: false,
+  adminToken: "",
   submissionId: "",
   submitted: false,
 };
@@ -94,6 +98,16 @@ function getChurchInitials(name) {
     .map((word) => word[0])
     .join("")
     .toUpperCase();
+}
+
+function getChurchLogoMarkup(className = "") {
+  const classAttribute = ["church-logo", className].filter(Boolean).join(" ");
+
+  if (CHURCH_CONFIG.logoUrl) {
+    return `<img class="${classAttribute} church-logo-image" src="${escapeHtml(CHURCH_CONFIG.logoUrl)}" alt="Logo ${escapeHtml(CHURCH_CONFIG.name)}" />`;
+  }
+
+  return `<span class="${classAttribute}" aria-label="Logo ${escapeHtml(CHURCH_CONFIG.name)}">${escapeHtml(getChurchInitials(CHURCH_CONFIG.name))}</span>`;
 }
 
 async function requestAccess() {
@@ -209,6 +223,12 @@ function render() {
     return;
   }
 
+  if (state.creatorMode && !state.adminUnlocked) {
+    state.creatorMode = false;
+    state.editingTrainingId = "";
+    state.isSavingTraining = false;
+  }
+
   if (state.creatorMode) {
     renderTrainingBuilder();
     return;
@@ -289,10 +309,24 @@ function renderMainMenu() {
   const memberIdentityMarkup = getMemberIdentityMarkup({
     showEmail: Boolean(state.leaders.length),
   });
+  const adminActionsMarkup = state.adminUnlocked
+    ? `
+          <button class="btn secondary" type="button" data-action="create-training">Criar estudo</button>
+          <button class="btn secondary" type="button" data-action="edit-training" ${selectedTraining ? "" : "disabled"}>Editar estudo</button>
+        `
+    : `
+          <button class="btn secondary" type="button" data-action="unlock-admin" ${state.isCheckingAdmin ? "disabled" : ""}>
+            ${state.isCheckingAdmin ? "Validando..." : "Liberar edição"}
+          </button>
+        `;
 
   app.innerHTML = `
     <section class="panel">
       <div class="hero-strip">
+        <div class="main-menu-brand">
+          ${getChurchLogoMarkup("main-menu-logo")}
+          <span>${escapeHtml(CHURCH_CONFIG.name)}</span>
+        </div>
         <h2>Menu principal</h2>
         <p>Escolha o assunto do discipulado e inicie o treinamento.</p>
       </div>
@@ -325,8 +359,7 @@ function renderMainMenu() {
         </div>
 
         <div class="actions">
-          <button class="btn secondary" type="button" data-action="create-training">Criar assunto</button>
-          <button class="btn secondary" type="button" data-action="edit-training" ${selectedTraining ? "" : "disabled"}>Editar assunto</button>
+          ${adminActionsMarkup}
           <button class="btn secondary" type="button" data-action="change-email">Sair</button>
           <button class="btn" type="button" data-action="start" ${canStart ? "" : "disabled"}>Iniciar treinamento</button>
         </div>
@@ -375,8 +408,17 @@ function bindMainMenuEvents() {
     ?.addEventListener("click", loadTrainings);
 
   document
+    .querySelector("[data-action='unlock-admin']")
+    ?.addEventListener("click", requestAdminAccess);
+
+  document
     .querySelector("[data-action='create-training']")
     ?.addEventListener("click", () => {
+      if (!state.adminUnlocked) {
+        showToast("Informe a senha para criar estudos.", "error");
+        return;
+      }
+
       state.creatorMode = true;
       state.editingTrainingId = "";
       state.currentModuleIndex = -1;
@@ -389,6 +431,11 @@ function bindMainMenuEvents() {
   document
     .querySelector("[data-action='edit-training']")
     ?.addEventListener("click", () => {
+      if (!state.adminUnlocked) {
+        showToast("Informe a senha para editar estudos.", "error");
+        return;
+      }
+
       const selectedTraining = getSelectedTraining();
 
       if (!selectedTraining) {
@@ -418,6 +465,9 @@ function bindMainMenuEvents() {
       state.answers = {};
       state.submitted = false;
       state.submissionId = "";
+      state.adminUnlocked = false;
+      state.adminToken = "";
+      state.isCheckingAdmin = false;
       state.leaderStatus = "idle";
       saveDraft();
       render();
@@ -440,6 +490,53 @@ function bindMainMenuEvents() {
       render();
       window.scrollTo({ top: 0, behavior: "smooth" });
     });
+}
+
+async function requestAdminAccess() {
+  const password = window.prompt("Digite a senha para liberar criação e edição de estudos.");
+
+  if (password === null) {
+    return;
+  }
+
+  if (!password.trim()) {
+    showToast("Informe a senha administrativa.", "error");
+    return;
+  }
+
+  state.isCheckingAdmin = true;
+  render();
+
+  try {
+    const response = await fetch(ADMIN_ENDPOINT, {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ password }),
+    });
+    const result = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+      throw new Error(result.error || "Não foi possível validar a senha.");
+    }
+
+    if (!result.token) {
+      throw new Error("Token administrativo não retornado.");
+    }
+
+    state.adminToken = result.token;
+    state.adminUnlocked = true;
+    showToast("Edição de estudos liberada.", "success");
+  } catch (error) {
+    state.adminToken = "";
+    state.adminUnlocked = false;
+    showToast(error.message, "error");
+  }
+
+  state.isCheckingAdmin = false;
+  render();
 }
 
 function getAccessStatusText() {
@@ -849,6 +946,14 @@ function bindTrainingBuilderEvents() {
 }
 
 async function saveTraining() {
+  if (!state.adminToken) {
+    state.adminUnlocked = false;
+    showToast("Informe a senha para salvar estudos.", "error");
+    state.creatorMode = false;
+    render();
+    return;
+  }
+
   syncTrainingDraftFromForm();
 
   if (!validateTrainingDraft()) {
@@ -866,6 +971,7 @@ async function saveTraining() {
       headers: {
         Accept: "application/json",
         "Content-Type": "application/json",
+        "X-Admin-Token": state.adminToken,
       },
       body: JSON.stringify({
         id: state.editingTrainingId || undefined,
@@ -900,6 +1006,11 @@ async function saveTraining() {
     render();
     window.scrollTo({ top: 0, behavior: "smooth" });
   } catch (error) {
+    if (/senha|administrativa|token|401/i.test(error.message)) {
+      state.adminToken = "";
+      state.adminUnlocked = false;
+    }
+
     state.isSavingTraining = false;
     showToast(error.message, "error");
     render();

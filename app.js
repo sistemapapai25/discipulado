@@ -68,6 +68,9 @@ function setupChurchHeader() {
     churchLogoImage.alt = `Logo ${CHURCH_CONFIG.name}`;
     churchLogoImage.hidden = false;
     churchLogoMark.hidden = true;
+  } else {
+    churchLogoImage.hidden = true;
+    churchLogoMark.hidden = false;
   }
 }
 
@@ -268,15 +271,14 @@ function renderLogin() {
   app.innerHTML = `
     <section class="panel">
       <div class="hero-strip">
-        <h2>Acesso ao discipulado de liderança</h2>
+        <h2>Discipulado Águas Purificadoras</h2>
         <p>Entre com o e-mail cadastrado no church360 para acessar os assuntos disponíveis.</p>
       </div>
       <div class="panel-body">
         <div class="form-grid">
           <div class="field">
-            <label for="emailInput">E-mail cadastrado no church360</label>
+            <label for="emailInput">Digite seu E-mail</label>
             <input class="input" id="emailInput" type="email" value="${escapeHtml(state.email)}" placeholder="seuemail@exemplo.com" autocomplete="email" ${state.leaderStatus === "loading" ? "disabled" : ""} />
-            <p class="hint">${getAccessStatusText()}</p>
           </div>
         </div>
 

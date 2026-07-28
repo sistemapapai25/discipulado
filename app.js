@@ -87,7 +87,7 @@ function getPageTitle() {
   }
 
   if (state.currentModuleIndex < 0) {
-    return "Menu principal";
+    return "Menu Principal";
   }
 
   return getSelectedTraining()?.title || "Discipulado";
@@ -810,7 +810,7 @@ function renderModule(module) {
   const isLast =
     state.currentModuleIndex === getSelectedTraining().modules.length - 1;
   const videoMarkup = getVideoMarkup(module);
-  const nextButtonLabel = state.isSavingModule ? "Salvando..." : "Próximo módulo";
+  const nextButtonLabel = state.isSavingModule ? "Salvando..." : "Próximo Módulo";
 
   app.innerHTML = `
     <section class="panel">
@@ -828,10 +828,10 @@ function renderModule(module) {
         </div>
         <div class="actions split">
           <button class="btn secondary" type="button" data-action="previous">Voltar</button>
-          <button class="btn secondary" type="button" data-action="menu">Menu principal</button>
+          <button class="btn secondary" type="button" data-action="menu">Menu Principal</button>
           ${
             isLast
-              ? `<button class="btn" type="button" data-action="submit" ${state.isSubmitting ? "disabled" : ""}>${state.isSubmitting ? "Salvando..." : "Conclui Discipulado"}</button>`
+              ? `<button class="btn" type="button" data-action="submit" ${state.isSubmitting ? "disabled" : ""}>${state.isSubmitting ? "Salvando..." : "Concluir Discipulado"}</button>`
               : `<button class="btn" type="button" data-action="next" ${state.isSavingModule ? "disabled" : ""}>${nextButtonLabel}</button>`
           }
         </div>

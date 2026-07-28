@@ -1,6 +1,6 @@
 # Discipulado Lideres
 
-WebApp mobile-first para treinamento de lideranca da igreja, com modulos em video, questionario, validacao de usuarios no Supabase church360, envio para API Serverless na Vercel e contingencia por WhatsApp.
+WebApp mobile-first para discipulado da igreja, com modulos em video, questionario, validacao de usuarios no Supabase church360 e envio para API Serverless na Vercel.
 
 ## Arquivos principais
 
@@ -19,7 +19,6 @@ WebApp mobile-first para treinamento de lideranca da igreja, com modulos em vide
    - `CHURCH_CONFIG.name`
    - `CHURCH_CONFIG.logoUrl`
    - `YOUTUBE_VIDEO_ID`
-   - `PASTOR_WHATSAPP_NUMBER`
 
 2. Na Vercel, configure as variaveis de ambiente:
    - `DATABASE_URL`
@@ -54,7 +53,6 @@ create table if not exists respostas_discipulado (
   estudo_id text not null,
   estudo_titulo text not null,
   respostas jsonb not null,
-  resumo_whatsapp text,
   payload jsonb not null,
   created_at timestamptz not null default now()
 );
@@ -98,4 +96,4 @@ Por padrao, a funcao de acesso consulta:
 
 O app chama `/api/acesso`, que libera o acesso quando encontra o e-mail em `user_account` com `is_active = true`. Depois disso, tenta carregar departamentos por `ministry_member` e `ministry` apenas para exibicao. A falta de departamento nao bloqueia o acesso nem o envio das respostas.
 
-As respostas do questionario sao gravadas somente no Neon pela funcao `api/salvar.js`. Durante o treinamento, cada modulo respondido gera ou atualiza um registro proprio do envio atual, identificado por `payload.metadados.tipo_registro = "modulo"` e `payload.metadados.envio_id`.
+As respostas do questionario sao gravadas somente no Neon pela funcao `api/salvar.js`. Durante o discipulado, cada modulo respondido gera ou atualiza um registro proprio do envio atual, identificado por `payload.metadados.tipo_registro = "modulo"` e `payload.metadados.envio_id`. Ao entrar novamente e selecionar o mesmo assunto, o app consulta o ultimo envio do usuario em `respostas_discipulado` e preenche as respostas ja salvas.

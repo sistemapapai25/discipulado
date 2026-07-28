@@ -450,14 +450,6 @@ h1 {
   background: #dbe8df;
 }
 
-.btn.whatsapp {
-  background: #1f7a4f;
-}
-
-.btn.whatsapp:hover {
-  background: #16623f;
-}
-
 .btn.danger {
   background: var(--danger);
 }

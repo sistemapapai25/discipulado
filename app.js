@@ -4,7 +4,6 @@ const API_ENDPOINT = "/api/salvar";
 const ACCESS_ENDPOINT = "/api/acesso";
 const ADMIN_ENDPOINT = "/api/admin";
 const SUBJECTS_ENDPOINT = "/api/assuntos";
-const PASTOR_WHATSAPP_NUMBER = "55COLE_AQUI_NUMERO_DO_PASTOR";
 const YOUTUBE_VIDEO_ID = "COLE_AQUI_YOUTUBE_VIDEO_ID";
 const DRAFT_KEY = "discipulado-lideres-draft-v1";
 
@@ -16,6 +15,7 @@ const CHURCH_CONFIG = {
 const state = {
   leaders: [],
   trainings: [],
+  savedModules: [],
   leaderStatus: "idle",
   trainingStatus: "idle",
   leader: null,
@@ -32,6 +32,7 @@ const state = {
   isSubmitting: false,
   isSavingModule: false,
   isSavingTraining: false,
+  isLoadingSavedAnswers: false,
   isCheckingAdmin: false,
   adminUnlocked: false,
   adminToken: "",
@@ -153,11 +154,13 @@ async function requestAccess() {
       : state.leaders[0]?.id || "";
     state.ministry = getDepartmentNames();
     state.leaderStatus = "loaded";
+    await loadSavedAnswersForSelectedTraining();
 
     saveDraft();
   } catch (error) {
     state.leader = null;
     state.leaders = [];
+    state.savedModules = [];
     state.selectedLeaderId = "";
     state.selectedLeaderName = "";
     state.ministry = "";
@@ -167,6 +170,57 @@ async function requestAccess() {
   }
 
   render();
+}
+
+async function loadSavedAnswersForSelectedTraining() {
+  if (!state.leader || !state.selectedTrainingId) {
+    state.savedModules = [];
+    state.submissionId = "";
+    state.isLoadingSavedAnswers = false;
+    return;
+  }
+
+  const leaderId = getSelectedLeader()?.userId || state.leader?.id || "";
+
+  if (!leaderId) {
+    state.savedModules = [];
+    state.submissionId = "";
+    state.isLoadingSavedAnswers = false;
+    return;
+  }
+
+  state.isLoadingSavedAnswers = true;
+
+  try {
+    const params = new URLSearchParams({
+      lider_id: leaderId,
+      estudo_id: state.selectedTrainingId,
+    });
+    const response = await fetch(`${API_ENDPOINT}?${params.toString()}`, {
+      headers: { Accept: "application/json" },
+    });
+    const result = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+      throw new Error(result.error || "Não foi possível carregar respostas salvas.");
+    }
+
+    const savedAnswers = isPlainObject(result.answers) ? result.answers : {};
+    state.answers = {
+      ...state.answers,
+      ...savedAnswers,
+    };
+    state.savedModules = Array.isArray(result.modules) && result.modules.length
+      ? result.modules
+      : getAnsweredModulesForSelectedTraining();
+    state.submissionId = result.submissionId || "";
+  } catch (error) {
+    state.savedModules = [];
+    showToast(error.message, "error");
+  }
+
+  state.isLoadingSavedAnswers = false;
+  saveDraft();
 }
 
 async function loadTrainings() {
@@ -190,6 +244,8 @@ async function loadTrainings() {
     if (!getAllTrainings().some((training) => training.id === state.selectedTrainingId)) {
       state.selectedTrainingId = state.trainings[0]?.id || "";
     }
+
+    await loadSavedAnswersForSelectedTraining();
   } catch (error) {
     state.trainings = [];
     state.selectedTrainingId = "";
@@ -311,6 +367,11 @@ function renderMainMenu() {
   const memberIdentityMarkup = getMemberIdentityMarkup({
     showEmail: Boolean(state.leaders.length),
   });
+  const savedAnswersMarkup = state.savedModules.length
+    ? `<span class="hint">${state.savedModules.length} módulo(s) já respondido(s) neste assunto.</span>`
+    : state.isLoadingSavedAnswers
+      ? `<span class="hint">Carregando respostas salvas.</span>`
+      : "";
   const adminActionsMarkup = state.adminUnlocked
     ? `
           <button class="btn secondary" type="button" data-action="create-training">Criar estudo</button>
@@ -330,7 +391,7 @@ function renderMainMenu() {
           <span>${escapeHtml(CHURCH_CONFIG.name)}</span>
         </div>
         <h2>Menu principal</h2>
-        <p>Escolha o assunto do discipulado e inicie o treinamento.</p>
+        <p>Escolha o assunto do discipulado e inicie o discipulado.</p>
       </div>
       <div class="panel-body">
         <div class="form-grid">
@@ -357,6 +418,7 @@ function renderMainMenu() {
             <span>Assunto selecionado</span>
             <strong>${escapeHtml(selectedTraining?.title || "Nenhum assunto selecionado")}</strong>
             <span class="hint">${selectedTraining ? `${selectedTraining.modules.length} módulos com vídeo e questionário integrado.` : "Cadastre ou selecione um assunto para iniciar."}</span>
+            ${savedAnswersMarkup}
           </div>
         </div>
 
@@ -397,11 +459,14 @@ function bindLoginEvents() {
 function bindMainMenuEvents() {
   document
     .querySelector("#trainingSelect")
-    ?.addEventListener("change", (event) => {
+    ?.addEventListener("change", async (event) => {
       state.selectedTrainingId = event.target.value;
       state.currentModuleIndex = -1;
       state.answers = {};
+      state.savedModules = [];
+      state.submissionId = "";
       saveDraft();
+      await loadSavedAnswersForSelectedTraining();
       render();
     });
 
@@ -459,6 +524,7 @@ function bindMainMenuEvents() {
     ?.addEventListener("click", () => {
       state.leader = null;
       state.leaders = [];
+      state.savedModules = [];
       state.email = "";
       state.selectedLeaderId = "";
       state.selectedLeaderName = "";
@@ -477,7 +543,7 @@ function bindMainMenuEvents() {
 
   document
     .querySelector("[data-action='start']")
-    ?.addEventListener("click", () => {
+    ?.addEventListener("click", async () => {
       const selectedTraining = getSelectedTraining();
       if (!state.leader || !selectedTraining) {
         showToast("Confirme o e-mail e o assunto.", "error");
@@ -486,6 +552,7 @@ function bindMainMenuEvents() {
 
       state.selectedLeaderName = state.leader.name;
       state.ministry = getDepartmentNames();
+      await loadSavedAnswersForSelectedTraining();
       state.submissionId = state.submissionId || createSubmissionId();
       state.currentModuleIndex = 0;
       saveDraft();
@@ -742,8 +809,7 @@ function renderModule(module) {
           <button class="btn secondary" type="button" data-action="menu">Menu principal</button>
           ${
             isLast
-              ? `<button class="btn" type="button" data-action="submit" ${state.isSubmitting ? "disabled" : ""}>${state.isSubmitting ? "Salvando..." : "Concluir treinamento"}</button>
-                 <button class="btn whatsapp" type="button" data-action="whatsapp">Enviar Copia para o Pastor via WhatsApp</button>`
+              ? `<button class="btn" type="button" data-action="submit" ${state.isSubmitting ? "disabled" : ""}>${state.isSubmitting ? "Salvando..." : "Conclui Discipulado"}</button>`
               : `<button class="btn" type="button" data-action="next" ${state.isSavingModule ? "disabled" : ""}>${nextButtonLabel}</button>`
           }
         </div>
@@ -843,10 +909,6 @@ function bindModuleEvents() {
   document
     .querySelector("[data-action='submit']")
     ?.addEventListener("click", submitAnswers);
-
-  document
-    .querySelector("[data-action='whatsapp']")
-    ?.addEventListener("click", sendWhatsappSummary);
 }
 
 function bindTrainingBuilderEvents() {
@@ -1029,6 +1091,7 @@ async function saveCurrentModuleAndGoNext() {
 
   try {
     await saveModuleByIndex(state.currentModuleIndex);
+    markCurrentModuleAsSaved();
     state.currentModuleIndex += 1;
     state.isSavingModule = false;
     saveDraft();
@@ -1069,7 +1132,9 @@ async function submitAnswers() {
 
   try {
     await saveModuleByIndex(state.currentModuleIndex);
+    markCurrentModuleAsSaved();
 
+    state.savedModules = getAnsweredModulesForSelectedTraining();
     state.submitted = true;
     state.isSubmitting = false;
     clearDraft();
@@ -1077,7 +1142,7 @@ async function submitAnswers() {
     render();
   } catch (error) {
     state.isSubmitting = false;
-    showToast(`${error.message} Use o envio por WhatsApp como contingência.`, "error");
+    showToast(error.message, "error");
     render();
   }
 }
@@ -1162,7 +1227,6 @@ function buildPayload() {
     ministerio: departmentNames || "Não informado",
     departamentos: getDepartmentsForPayload(),
     respostas: selectedTraining.modules.map(buildModuleAnswer),
-    resumo_whatsapp: buildWhatsappSummary(),
     metadados: {
       origem: "webapp-discipulado-lideres",
       versao: "1.0.0",
@@ -1207,7 +1271,6 @@ function buildModulePayload(moduleIndex) {
     ministerio: departmentNames || "Não informado",
     departamentos: getDepartmentsForPayload(),
     respostas: [buildModuleAnswer(module)],
-    resumo_whatsapp: buildModuleWhatsappSummary(module),
     metadados: {
       origem: "webapp-discipulado-lideres",
       versao: "1.0.0",
@@ -1235,79 +1298,47 @@ function buildModuleAnswer(module) {
   };
 }
 
-function buildWhatsappSummary() {
-  const selectedLeader = getSelectedLeader();
-  const selectedTraining = getSelectedTraining();
-  const departmentNames = getDepartmentNames();
-  if (!selectedTraining) {
-    return "";
-  }
+function markCurrentModuleAsSaved() {
+  const module = getSelectedTraining()?.modules[state.currentModuleIndex];
 
-  const leaderName =
-    state.leader?.name || selectedLeader?.name || state.selectedLeaderName || "Não informado";
-  const lines = [
-    `Resumo do Treinamento de Liderança`,
-    ``,
-    `Estudo: ${selectedTraining.title}`,
-    `Participante: ${leaderName}`,
-    `E-mail: ${state.leader?.email || state.email || "Não informado"}`,
-  ];
-
-  if (departmentNames) {
-    lines.push(`Departamentos: ${departmentNames}`);
-  }
-
-  lines.push("");
-
-  selectedTraining.modules.forEach((module) => {
-    lines.push(`Módulo ${module.number}: ${module.title}`);
-    module.questions.forEach((question) => {
-      lines.push(`${question.title}: ${(state.answers[question.id] || "").trim() || "Sem resposta"}`);
-    });
-    lines.push("");
-  });
-
-  return lines.join("\n");
-}
-
-function buildModuleWhatsappSummary(module) {
-  const leaderName =
-    state.leader?.name || getSelectedLeader()?.name || state.selectedLeaderName || "Não informado";
-  const selectedTraining = getSelectedTraining();
-  const departmentNames = getDepartmentNames();
-  const lines = [
-    `Resumo do Treinamento de Liderança`,
-    ``,
-    `Estudo: ${selectedTraining?.title || "Não informado"}`,
-    `Módulo ${module.number}: ${module.title}`,
-    `Participante: ${leaderName}`,
-    `E-mail: ${state.leader?.email || state.email || "Não informado"}`,
-  ];
-
-  if (departmentNames) {
-    lines.push(`Departamentos: ${departmentNames}`);
-  }
-
-  lines.push("");
-
-  module.questions.forEach((question) => {
-    lines.push(`${question.title}: ${(state.answers[question.id] || "").trim() || "Sem resposta"}`);
-  });
-
-  return lines.join("\n");
-}
-
-function sendWhatsappSummary() {
-  if (!validateAllAnswers()) {
+  if (!module) {
     return;
   }
 
-  const number = PASTOR_WHATSAPP_NUMBER.includes("COLE_AQUI")
-    ? ""
-    : PASTOR_WHATSAPP_NUMBER.replace(/\D/g, "");
-  const baseUrl = number ? `https://wa.me/${number}` : "https://wa.me/";
-  const url = `${baseUrl}?text=${encodeURIComponent(buildWhatsappSummary())}`;
-  window.open(url, "_blank", "noopener,noreferrer");
+  const savedModule = {
+    id: module.id,
+    number: module.number,
+    title: module.title,
+  };
+  const existingModuleIndex = state.savedModules.findIndex(
+    (item) => item.id === savedModule.id,
+  );
+
+  if (existingModuleIndex >= 0) {
+    state.savedModules[existingModuleIndex] = savedModule;
+    return;
+  }
+
+  state.savedModules = [...state.savedModules, savedModule];
+}
+
+function getAnsweredModulesForSelectedTraining() {
+  const selectedTraining = getSelectedTraining();
+
+  if (!selectedTraining) {
+    return [];
+  }
+
+  return selectedTraining.modules
+    .filter((module) =>
+      module.questions.length &&
+      module.questions.every((question) => (state.answers[question.id] || "").trim()),
+    )
+    .map((module) => ({
+      id: module.id,
+      number: module.number,
+      title: module.title,
+    }));
 }
 
 function renderSuccess() {
@@ -1326,7 +1357,6 @@ function renderSuccess() {
       <div class="panel-header">
         <p class="eyebrow">Registro concluído</p>
         <h2>Respostas enviadas para acompanhamento pastoral.</h2>
-        <p>Você ainda pode enviar uma cópia por WhatsApp caso queira reforçar o recebimento.</p>
       </div>
       <div class="panel-body">
         <div class="summary">
@@ -1340,33 +1370,23 @@ function renderSuccess() {
           </article>
         </div>
         <div class="actions">
-          <button class="btn whatsapp" type="button" data-action="whatsapp">Enviar Copia para o Pastor via WhatsApp</button>
-          <button class="btn secondary" type="button" data-action="restart">Novo envio</button>
+          <button class="btn secondary" type="button" data-action="success-menu">Voltar ao menu principal</button>
         </div>
       </div>
     </section>
   `;
 
-  document
-    .querySelector("[data-action='whatsapp']")
-    ?.addEventListener("click", sendWhatsappSummary);
-
-  document.querySelector("[data-action='restart']")?.addEventListener("click", () => {
-    state.selectedLeaderId = "";
-    state.selectedLeaderName = "";
-    state.email = "";
-    state.leader = null;
-    state.leaders = [];
-    state.ministry = "";
-    state.selectedTrainingId = "";
+  document.querySelector("[data-action='success-menu']")?.addEventListener("click", () => {
+    state.savedModules = state.savedModules.length
+      ? state.savedModules
+      : getAnsweredModulesForSelectedTraining();
     state.creatorMode = false;
     state.editingTrainingId = "";
     state.trainingDraft = createEmptyTrainingDraft();
     state.currentModuleIndex = -1;
-    state.answers = {};
     state.submitted = false;
-    state.submissionId = "";
-    state.leaderStatus = "idle";
+    state.isSubmitting = false;
+    state.isSavingModule = false;
     saveDraft();
     render();
   });
@@ -1467,6 +1487,10 @@ function isValidTraining(training) {
       Array.isArray(training.modules) &&
       training.modules.length,
   );
+}
+
+function isPlainObject(value) {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
 }
 
 function sortTrainings(firstTraining, secondTraining) {
@@ -1649,9 +1673,11 @@ function restoreDraft() {
         ? draftModuleIndex
         : -1;
     state.answers = draft.answers || {};
+    state.savedModules = Array.isArray(draft.savedModules) ? draft.savedModules : [];
     state.submissionId = draft.submissionId || "";
     state.isSavingModule = false;
     state.isSubmitting = false;
+    state.isLoadingSavedAnswers = false;
   } catch {
     clearDraft();
   }
@@ -1662,6 +1688,7 @@ function saveDraft() {
     email: state.email,
     leader: state.leader,
     leaders: state.leaders,
+    savedModules: state.savedModules,
     trainings: state.trainings,
     selectedLeaderId: state.selectedLeaderId,
     selectedLeaderName: state.selectedLeaderName,

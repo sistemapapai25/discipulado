@@ -4,8 +4,8 @@ import { randomUUID } from "node:crypto";
 const REQUIRED_FIELDS = ["estudo", "lider", "respostas"];
 
 export default async function handler(req, res) {
-  if (req.method !== "POST") {
-    res.setHeader("Allow", "POST");
+  if (!["GET", "POST"].includes(req.method)) {
+    res.setHeader("Allow", "GET, POST");
     return res.status(405).json({ error: "Método não permitido." });
   }
 
@@ -16,6 +16,13 @@ export default async function handler(req, res) {
   }
 
   try {
+    const sql = neon(process.env.DATABASE_URL);
+    await ensureResponsesTable(sql);
+
+    if (req.method === "GET") {
+      return handleGetSavedAnswers(req, res, sql);
+    }
+
     const payload = typeof req.body === "string" ? JSON.parse(req.body) : req.body;
     const missingField = REQUIRED_FIELDS.find((field) => !payload?.[field]);
 
@@ -25,16 +32,11 @@ export default async function handler(req, res) {
       });
     }
 
-    const sql = neon(process.env.DATABASE_URL);
-    await ensureResponsesTable(sql);
     const leaderId = payload.lider?.id ? String(payload.lider.id) : null;
     const leaderName = payload.lider?.nome ? String(payload.lider.nome) : null;
     const ministry = String(payload.ministerio || "").trim() || "Não informado";
     const studyId = payload.estudo?.id ? String(payload.estudo.id) : null;
     const studyTitle = payload.estudo?.titulo ? String(payload.estudo.titulo) : null;
-    const whatsappSummary = payload.resumo_whatsapp
-      ? String(payload.resumo_whatsapp)
-      : null;
     const recordType = payload.metadados?.tipo_registro
       ? String(payload.metadados.tipo_registro)
       : "";
@@ -72,7 +74,6 @@ export default async function handler(req, res) {
             estudo_titulo = ${studyTitle},
             titulo_estudo = ${studyTitle},
             respostas = ${JSON.stringify(payload.respostas)}::jsonb,
-            resumo_whatsapp = ${whatsappSummary},
             payload = ${JSON.stringify(payload)}::jsonb
           where id = ${existing.id}
           returning id
@@ -97,7 +98,6 @@ export default async function handler(req, res) {
         estudo_titulo,
         titulo_estudo,
         respostas,
-        resumo_whatsapp,
         payload
       )
       values (
@@ -110,7 +110,6 @@ export default async function handler(req, res) {
         ${studyTitle},
         ${studyTitle},
         ${JSON.stringify(payload.respostas)}::jsonb,
-        ${whatsappSummary},
         ${JSON.stringify(payload)}::jsonb
       )
       returning id
@@ -128,6 +127,108 @@ export default async function handler(req, res) {
   }
 }
 
+async function handleGetSavedAnswers(req, res, sql) {
+  const params = getRequestParams(req);
+  const leaderId = String(params.get("lider_id") || "").trim();
+  const studyId = String(params.get("estudo_id") || "").trim();
+
+  if (!leaderId || !studyId) {
+    return res.status(400).json({
+      error: "Informe lider_id e estudo_id para carregar respostas salvas.",
+    });
+  }
+
+  const [latest] = await sql`
+    select payload
+    from respostas_discipulado
+    where lider_id = ${leaderId}
+      and estudo_id = ${studyId}
+      and payload->'metadados'->>'tipo_registro' = 'modulo'
+    order by created_at desc
+    limit 1
+  `;
+
+  const submissionId = latest?.payload?.metadados?.envio_id || "";
+
+  if (!submissionId) {
+    return res.status(200).json({
+      answers: {},
+      modules: [],
+      submissionId: "",
+    });
+  }
+
+  const rows = await sql`
+    select respostas, payload, created_at
+    from respostas_discipulado
+    where lider_id = ${leaderId}
+      and estudo_id = ${studyId}
+      and payload->'metadados'->>'tipo_registro' = 'modulo'
+      and payload->'metadados'->>'envio_id' = ${submissionId}
+    order by created_at asc
+  `;
+
+  return res.status(200).json(normalizeSavedAnswers(rows, submissionId));
+}
+
+function normalizeSavedAnswers(rows, submissionId) {
+  const answers = {};
+  const modulesById = new Map();
+
+  rows.forEach((row) => {
+    const modulePayload = row.payload?.modulo || null;
+    const moduleId = modulePayload?.id ? String(modulePayload.id) : "";
+    const responseModules = Array.isArray(row.respostas) ? row.respostas : [];
+
+    responseModules.forEach((responseModule) => {
+      const normalizedModuleId =
+        moduleId || String(responseModule?.modulo_id || "").trim();
+
+      if (normalizedModuleId) {
+        modulesById.set(normalizedModuleId, {
+          id: normalizedModuleId,
+          number: responseModule?.modulo_numero || modulePayload?.numero || null,
+          title: responseModule?.modulo_titulo || modulePayload?.titulo || "",
+        });
+      }
+
+      const questions = Array.isArray(responseModule?.perguntas)
+        ? responseModule.perguntas
+        : [];
+
+      questions.forEach((question) => {
+        const questionId = String(question?.pergunta_id || "").trim();
+        const answer = String(question?.resposta || "").trim();
+
+        if (questionId && answer) {
+          answers[questionId] = answer;
+        }
+      });
+    });
+  });
+
+  return {
+    answers,
+    modules: Array.from(modulesById.values()),
+    submissionId,
+  };
+}
+
+function getRequestParams(req) {
+  if (req.query && typeof req.query === "object") {
+    return new URLSearchParams(
+      Object.entries(req.query).map(([key, value]) => [
+        key,
+        Array.isArray(value) ? value[0] : value,
+      ]),
+    );
+  }
+
+  const host = req.headers.host || "localhost";
+  const url = new URL(req.url || "/", `https://${host}`);
+  return url.searchParams;
+}
+
 async function ensureResponsesTable(sql) {
   await sql`
     create table if not exists respostas_discipulado (
@@ -138,7 +239,6 @@ async function ensureResponsesTable(sql) {
       estudo_id text not null,
       estudo_titulo text not null,
       respostas jsonb not null,
-      resumo_whatsapp text,
       payload jsonb not null default '{}'::jsonb,
       created_at timestamptz not null default now()
     )
@@ -154,7 +254,6 @@ async function ensureResponsesTable(sql) {
       add column if not exists estudo_titulo text,
       add column if not exists titulo_estudo text,
       add column if not exists respostas jsonb,
-      add column if not exists resumo_whatsapp text,
       add column if not exists payload jsonb default '{}'::jsonb,
       add column if not exists created_at timestamptz default now()
   `;

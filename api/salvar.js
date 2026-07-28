@@ -70,6 +70,7 @@ export default async function handler(req, res) {
             nome_lider = ${leaderName},
             ministerio = ${ministry},
             estudo_titulo = ${studyTitle},
+            titulo_estudo = ${studyTitle},
             respostas = ${JSON.stringify(payload.respostas)}::jsonb,
             resumo_whatsapp = ${whatsappSummary},
             payload = ${JSON.stringify(payload)}::jsonb
@@ -94,6 +95,7 @@ export default async function handler(req, res) {
         ministerio,
         estudo_id,
         estudo_titulo,
+        titulo_estudo,
         respostas,
         resumo_whatsapp,
         payload
@@ -105,6 +107,7 @@ export default async function handler(req, res) {
         ${leaderName},
         ${ministry},
         ${studyId},
+        ${studyTitle},
         ${studyTitle},
         ${JSON.stringify(payload.respostas)}::jsonb,
         ${whatsappSummary},
@@ -149,6 +152,7 @@ async function ensureResponsesTable(sql) {
       add column if not exists ministerio text,
       add column if not exists estudo_id text,
       add column if not exists estudo_titulo text,
+      add column if not exists titulo_estudo text,
       add column if not exists respostas jsonb,
       add column if not exists resumo_whatsapp text,
       add column if not exists payload jsonb default '{}'::jsonb,

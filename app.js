@@ -76,7 +76,7 @@ function setupChurchHeader() {
 
 function getPageTitle() {
   if (!state.leader) {
-    return "Acesso do líder";
+    return "Acesso do Líder e Voluntário";
   }
 
   if (state.creatorMode) {
@@ -271,7 +271,7 @@ function renderLogin() {
   app.innerHTML = `
     <section class="panel">
       <div class="hero-strip">
-        <h2>Discipulado Águas Purificadoras</h2>
+        <h2>Acesso do Líder e Voluntário</h2>
         <p>Entre com o e-mail cadastrado no church360 para acessar os assuntos disponíveis.</p>
       </div>
       <div class="panel-body">

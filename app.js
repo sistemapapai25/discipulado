@@ -42,6 +42,7 @@ const state = {
 
 const app = document.querySelector("#app");
 const toast = document.querySelector("#toast");
+const topbar = document.querySelector(".topbar");
 const progressFill = document.querySelector("#progressFill");
 const progressLabel = document.querySelector("#progressLabel");
 const studyTitle = document.querySelector("#studyTitle");
@@ -269,6 +270,7 @@ function sortLeaders(firstLeader, secondLeader) {
 function render() {
   updateProgress();
   studyTitle.textContent = getPageTitle();
+  updateTopbarVisibility();
 
   if (state.submitted) {
     renderSuccess();
@@ -306,6 +308,23 @@ function render() {
   }
 
   renderModule(selectedTraining.modules[state.currentModuleIndex]);
+}
+
+function updateTopbarVisibility() {
+  if (!topbar) {
+    return;
+  }
+
+  topbar.hidden = shouldHideTopbar();
+}
+
+function shouldHideTopbar() {
+  return Boolean(
+    state.leader &&
+    !state.creatorMode &&
+    !state.submitted &&
+    state.currentModuleIndex < 0,
+  );
 }
 
 function updateProgress() {

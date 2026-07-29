@@ -21,6 +21,7 @@ export default async function handler(req, res) {
 
   try {
     if (req.method === "GET") {
+      res.setHeader("Cache-Control", "no-store");
       const rows = await sql`
         select
           id,

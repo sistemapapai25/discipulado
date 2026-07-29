@@ -232,7 +232,9 @@ async function loadTrainings() {
   state.trainingStatus = "loading";
 
   try {
-    const response = await fetch(SUBJECTS_ENDPOINT, {
+    const subjectsUrl = `${SUBJECTS_ENDPOINT}?_=${Date.now()}`;
+    const response = await fetch(subjectsUrl, {
+      cache: "no-store",
       headers: { Accept: "application/json" },
     });
     const result = await response.json().catch(() => ({}));

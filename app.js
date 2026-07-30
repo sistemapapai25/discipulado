@@ -22,6 +22,7 @@ const state = {
   leaderStatus: "idle",
   trainingStatus: "idle",
   leader: null,
+  leaderToken: "",
   email: "",
   selectedLeaderId: "",
   selectedLeaderName: "",
@@ -163,6 +164,7 @@ async function requestAccess() {
     }
 
     state.email = email;
+    state.leaderToken = result.token || "";
     state.leader = result.leader || null;
     state.leaders = (result.ministries || [])
       .filter(Boolean)
@@ -186,6 +188,7 @@ async function requestAccess() {
     saveDraft();
   } catch (error) {
     state.leader = null;
+    state.leaderToken = "";
     state.leaders = [];
     state.savedModules = [];
     state.progressByTraining = {};
@@ -208,9 +211,7 @@ async function loadSavedAnswersForSelectedTraining() {
     return;
   }
 
-  const leaderId = getLeaderId();
-
-  if (!leaderId) {
+  if (!state.leaderToken) {
     state.savedModules = [];
     state.submissionId = "";
     state.isLoadingSavedAnswers = false;
@@ -221,13 +222,18 @@ async function loadSavedAnswersForSelectedTraining() {
 
   try {
     const params = new URLSearchParams({
-      lider_id: leaderId,
       estudo_id: state.selectedTrainingId,
     });
     const response = await fetch(`${API_ENDPOINT}?${params.toString()}`, {
-      headers: { Accept: "application/json" },
+      headers: withLeaderToken({ Accept: "application/json" }),
     });
     const result = await response.json().catch(() => ({}));
+
+    if (response.status === 401) {
+      state.isLoadingSavedAnswers = false;
+      handleExpiredSession();
+      return;
+    }
 
     if (!response.ok) {
       throw new Error(result.error || "Não foi possível carregar respostas salvas.");
@@ -252,20 +258,22 @@ async function loadSavedAnswersForSelectedTraining() {
 }
 
 async function loadLeaderProgress() {
-  const leaderId = getLeaderId();
-
-  if (!leaderId) {
+  if (!state.leaderToken) {
     state.progressByTraining = {};
     return;
   }
 
   try {
-    const params = new URLSearchParams({ lider_id: leaderId });
-    const response = await fetch(`${API_ENDPOINT}?${params.toString()}`, {
+    const response = await fetch(API_ENDPOINT, {
       cache: "no-store",
-      headers: { Accept: "application/json" },
+      headers: withLeaderToken({ Accept: "application/json" }),
     });
     const result = await response.json().catch(() => ({}));
+
+    if (response.status === 401) {
+      handleExpiredSession();
+      return;
+    }
 
     if (!response.ok) {
       throw new Error(result.error || "Não foi possível carregar seu progresso.");
@@ -1096,6 +1104,7 @@ function bindMainMenuEvents() {
 
 function signOut() {
   state.leader = null;
+  state.leaderToken = "";
   state.leaders = [];
   state.savedModules = [];
   state.progressByTraining = {};
@@ -2202,13 +2211,18 @@ async function saveCurrentModuleAndGoNext() {
 async function saveModuleByIndex(moduleIndex) {
   const response = await fetch(API_ENDPOINT, {
     method: "POST",
-    headers: {
+    headers: withLeaderToken({
       "Content-Type": "application/json",
-    },
+    }),
     body: JSON.stringify(buildModulePayload(moduleIndex)),
   });
 
   const result = await response.json().catch(() => ({}));
+
+  if (response.status === 401) {
+    handleExpiredSession();
+    throw new Error("Sua sessão expirou.");
+  }
 
   if (!response.ok) {
     throw new Error(result.error || "Não foi possível salvar este módulo.");
@@ -2511,6 +2525,32 @@ function getSelectedLeader() {
 
 function getLeaderId() {
   return getSelectedLeader()?.userId || state.leader?.id || "";
+}
+
+function withLeaderToken(headers = {}) {
+  return state.leaderToken
+    ? { ...headers, "x-leader-token": state.leaderToken }
+    : headers;
+}
+
+function handleExpiredSession() {
+  // A sessão caiu, mas o que o líder digitou não deve cair com ela: guarda o
+  // rascunho, derruba só a sessão e devolve as respostas ao voltar.
+  const answers = state.answers;
+  const currentModuleIndex = state.currentModuleIndex;
+  const submissionId = state.submissionId;
+
+  signOut();
+
+  state.answers = answers;
+  state.currentModuleIndex = currentModuleIndex;
+  state.submissionId = submissionId;
+  saveDraft();
+  showToast(
+    "Sua sessão expirou. Entre novamente — suas respostas foram guardadas.",
+    "error",
+  );
+  render();
 }
 
 function getLoggedUserEmail() {
@@ -2833,8 +2873,12 @@ function restoreDraft() {
   try {
     const draft = JSON.parse(localStorage.getItem(DRAFT_KEY) || "{}");
     state.email = draft.email || "";
-    state.leader = draft.leader || null;
-    state.leaders = Array.isArray(draft.leaders) ? draft.leaders : [];
+    state.leaderToken = draft.leaderToken || "";
+    // Rascunho sem token (gravado antes desta versão, ou de uma saída) não vale
+    // como sessão: o líder entra de novo e as respostas continuam guardadas.
+    state.leader = state.leaderToken ? draft.leader || null : null;
+    state.leaders =
+      state.leaderToken && Array.isArray(draft.leaders) ? draft.leaders : [];
     state.series = Array.isArray(draft.series)
       ? draft.series.filter(isValidSeries).sort(sortByOrder)
       : [];
@@ -2889,6 +2933,7 @@ function saveDraft() {
   const draft = {
     email: state.email,
     leader: state.leader,
+    leaderToken: state.leaderToken,
     leaders: state.leaders,
     savedModules: state.savedModules,
     series: state.series,

@@ -1,4 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
+import { checkAccessRateLimit, registerAccessFailure } from "./rate-limit.js";
+import { createLeaderToken, isSessionSecretConfigured } from "./session-auth.js";
 
 const DEFAULT_DEPARTMENT_SELECT = `
   id,
@@ -37,11 +39,28 @@ export default async function handler(req, res) {
     });
   }
 
+  if (!isSessionSecretConfigured()) {
+    return res.status(500).json({
+      error:
+        "Configure STUDY_SESSION_SECRET nas variáveis de ambiente da Vercel para assinar a sessão do líder.",
+    });
+  }
+
   try {
     const email = normalizeEmail(req.body?.email);
 
     if (!email) {
       return res.status(400).json({ error: "Informe um e-mail válido." });
+    }
+
+    const rateLimit = await checkAccessRateLimit(req);
+
+    if (!rateLimit.allowed) {
+      res.setHeader("Retry-After", String(rateLimit.retryAfterSeconds));
+      return res.status(429).json({
+        error:
+          "Muitas tentativas de acesso deste dispositivo. Aguarde alguns minutos e tente novamente.",
+      });
     }
 
     const supabase = createClient(supabaseUrl, supabaseKey, {
@@ -54,6 +73,8 @@ export default async function handler(req, res) {
     const person = await findActivePersonByEmail(supabase, email);
 
     if (!person) {
+      await registerAccessFailure(req);
+
       const errorMessage = supabaseServiceRoleKey
         ? "E-mail não encontrado como usuário ativo no church360."
         : "Não foi possível ler este e-mail no church360. Configure SUPABASE_SERVICE_ROLE_KEY na Vercel para a função acessar user_account sem bloqueio de RLS.";
@@ -71,6 +92,7 @@ export default async function handler(req, res) {
 
     res.setHeader("Cache-Control", "no-store");
     return res.status(200).json({
+      token: createLeaderToken(String(person.id)),
       leader: {
         id: String(person.id),
         email: person.email || email,

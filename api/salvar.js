@@ -1,5 +1,9 @@
 import { neon } from "@neondatabase/serverless";
 import { randomUUID } from "node:crypto";
+import {
+  getLeaderTokenFromRequest,
+  verifyLeaderToken,
+} from "./session-auth.js";
 
 const REQUIRED_FIELDS = ["estudo", "lider", "respostas"];
 
@@ -15,12 +19,22 @@ export default async function handler(req, res) {
     });
   }
 
+  // A identidade sai do token assinado, nunca do corpo nem da query: é isso que
+  // impede ler ou gravar no nome de outro líder por fora do aplicativo.
+  const leaderId = verifyLeaderToken(getLeaderTokenFromRequest(req));
+
+  if (!leaderId) {
+    return res.status(401).json({
+      error: "Sua sessão expirou. Entre novamente com seu e-mail.",
+    });
+  }
+
   try {
     const sql = neon(process.env.DATABASE_URL);
     await ensureResponsesTable(sql);
 
     if (req.method === "GET") {
-      return handleGetSavedAnswers(req, res, sql);
+      return handleGetSavedAnswers(req, res, sql, leaderId);
     }
 
     const payload = typeof req.body === "string" ? JSON.parse(req.body) : req.body;
@@ -32,7 +46,6 @@ export default async function handler(req, res) {
       });
     }
 
-    const leaderId = payload.lider?.id ? String(payload.lider.id) : null;
     const leaderName = payload.lider?.nome ? String(payload.lider.nome) : null;
     const ministry = String(payload.ministerio || "").trim() || "Não informado";
     const studyId = payload.estudo?.id ? String(payload.estudo.id) : null;
@@ -45,11 +58,15 @@ export default async function handler(req, res) {
       : "";
     const moduleId = payload.modulo?.id ? String(payload.modulo.id) : "";
 
-    if (!leaderId || !leaderName || !studyId || !studyTitle) {
+    if (!leaderName || !studyId || !studyTitle) {
       return res.status(400).json({
         error: "Payload incompleto para salvar a resposta do discipulado.",
       });
     }
+
+    // Descarta qualquer id que o cliente tenha mandado, para não gravar uma
+    // identidade falsa dentro do jsonb.
+    payload.lider = { ...(payload.lider || {}), id: leaderId };
 
     if (recordType === "modulo" && submissionId && moduleId) {
       const [existing] = await sql`
@@ -127,16 +144,9 @@ export default async function handler(req, res) {
   }
 }
 
-async function handleGetSavedAnswers(req, res, sql) {
+async function handleGetSavedAnswers(req, res, sql, leaderId) {
   const params = getRequestParams(req);
-  const leaderId = String(params.get("lider_id") || "").trim();
   const studyId = String(params.get("estudo_id") || "").trim();
-
-  if (!leaderId) {
-    return res.status(400).json({
-      error: "Informe lider_id para carregar respostas salvas.",
-    });
-  }
 
   if (!studyId) {
     return handleGetLeaderProgress(res, sql, leaderId);

@@ -59,6 +59,31 @@ export async function findActivePersonByEmail(supabase, email) {
   return data;
 }
 
+/**
+ * Busca membros ativos por nome ou e-mail, para a tela de senhas do
+ * administrador. Sem termo, devolve os primeiros em ordem alfabetica.
+ */
+export async function searchActivePeople(supabase, term, limit = 25) {
+  const cleanTerm = String(term || "").trim();
+  let query = supabase
+    .from("user_account")
+    .select("id,email,full_name,first_name,last_name,nickname")
+    .eq("is_active", true);
+
+  if (cleanTerm) {
+    const pattern = `%${cleanTerm.replace(/[%_]/g, "")}%`;
+    query = query.or(`full_name.ilike.${pattern},email.ilike.${pattern}`);
+  }
+
+  const { data, error } = await query.order("full_name").limit(limit);
+
+  if (error) {
+    throw error;
+  }
+
+  return (data || []).filter((person) => person.email);
+}
+
 export async function findDepartmentsByUserId(supabase, userId) {
   const { data, error } = await fetchDepartmentRows(
     supabase,

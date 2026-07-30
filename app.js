@@ -4,6 +4,7 @@ const API_ENDPOINT = "/api/salvar";
 const ACCESS_ENDPOINT = "/api/acesso";
 const ADMIN_ENDPOINT = "/api/admin";
 const SUBJECTS_ENDPOINT = "/api/assuntos";
+const LEADERS_ENDPOINT = "/api/lideres";
 const SERIES_ENDPOINT = "/api/series";
 const YOUTUBE_VIDEO_ID = "COLE_AQUI_YOUTUBE_VIDEO_ID";
 const DRAFT_KEY = "discipulado-lideres-draft-v1";
@@ -31,8 +32,16 @@ const state = {
   // Senha e código nunca vão para o localStorage: só vivem em memória.
   password: "",
   passwordConfirm: "",
+  temporaryPassword: "",
   code: "",
   isSendingCode: false,
+  // Tela de senhas dos lideres (so administrador).
+  leaderAccessMode: false,
+  leaderAccessList: [],
+  leaderAccessSearch: "",
+  leaderAccessStatus: "idle",
+  leaderAccessResult: null,
+  resettingEmail: "",
   selectedLeaderId: "",
   selectedLeaderName: "",
   ministry: "",
@@ -282,12 +291,48 @@ async function signInWithPassword() {
   });
 }
 
+async function changeTemporaryPassword() {
+  syncLoginFieldsFromDom();
+
+  if (state.password.length < 8) {
+    showToast("A senha precisa ter pelo menos 8 caracteres.", "error");
+    document.querySelector("#newPasswordInput")?.focus();
+    return;
+  }
+
+  if (state.password !== state.passwordConfirm) {
+    showToast("As duas senhas não são iguais.", "error");
+    document.querySelector("#confirmPasswordInput")?.focus();
+    return;
+  }
+
+  await completeSignIn({
+    acao: "trocar-senha",
+    email: state.email,
+    senhaAtual: state.temporaryPassword,
+    senha: state.password,
+  });
+}
+
 async function completeSignIn(body) {
   state.leaderStatus = "loading";
   render();
 
   try {
     const result = await postAccess(body);
+
+    // Senha temporária aceita: ela não abre o app, só leva para a troca.
+    if (result.precisaTrocarSenha) {
+      state.temporaryPassword = body.senha || "";
+      state.password = "";
+      state.passwordConfirm = "";
+      state.loginStep = "trocar";
+      state.leaderStatus = "idle";
+      render();
+      showToast("Senha temporária aceita. Agora escolha a sua senha.", "success");
+      setTimeout(() => document.querySelector("#newPasswordInput")?.focus(), 50);
+      return;
+    }
 
     state.leaderToken = result.token || "";
     state.leader = result.leader || null;
@@ -373,6 +418,7 @@ function syncLoginFieldsFromDom() {
 function clearLoginSecrets() {
   state.password = "";
   state.passwordConfirm = "";
+  state.temporaryPassword = "";
   state.code = "";
   state.isSendingCode = false;
 }
@@ -692,16 +738,26 @@ function render() {
 
   if (
     !state.adminUnlocked &&
-    (state.creatorMode || state.configMode || state.seriesMode)
+    (state.creatorMode ||
+      state.configMode ||
+      state.seriesMode ||
+      state.leaderAccessMode)
   ) {
     state.creatorMode = false;
     state.configMode = false;
     state.seriesMode = false;
+    state.leaderAccessMode = false;
+    state.leaderAccessResult = null;
     state.editingTrainingId = "";
     state.editingSeriesId = "";
     state.isSavingTraining = false;
     state.isSavingSeries = false;
     state.isSavingConfig = false;
+  }
+
+  if (state.leaderAccessMode) {
+    renderLeaderAccess();
+    return;
   }
 
   if (state.configMode) {
@@ -784,7 +840,56 @@ function renderLogin() {
     return;
   }
 
+  if (state.loginStep === "trocar") {
+    renderChangePasswordStep();
+    return;
+  }
+
   renderEmailStep();
+}
+
+function renderChangePasswordStep() {
+  const busy = state.leaderStatus === "loading";
+
+  app.innerHTML = `
+    <section class="panel">
+      <div class="hero-strip">
+        <h2>Crie sua senha</h2>
+        <p>
+          Você entrou com uma senha temporária. Escolha agora uma senha só sua —
+          a temporária deixa de valer.
+        </p>
+      </div>
+      <div class="panel-body">
+        <div class="form-grid">
+          <div class="field">
+            <label class="field-label">E-mail</label>
+            <p class="status-line">${escapeHtml(state.email)}</p>
+          </div>
+          <div class="field">
+            <label for="newPasswordInput">Sua nova senha</label>
+            <input class="input" id="newPasswordInput" type="password" value="${escapeHtml(state.password)}" placeholder="Pelo menos 8 caracteres" autocomplete="new-password" ${busy ? "disabled" : ""} />
+            <p class="hint">Use pelo menos 8 caracteres, com letras e números.</p>
+          </div>
+          <div class="field">
+            <label for="confirmPasswordInput">Repita a senha</label>
+            <input class="input" id="confirmPasswordInput" type="password" value="${escapeHtml(state.passwordConfirm)}" placeholder="Digite a senha de novo" autocomplete="new-password" ${busy ? "disabled" : ""} />
+          </div>
+        </div>
+
+        <div class="actions">
+          <button class="btn" type="button" data-action="change-password" ${busy ? "disabled" : ""}>
+            ${busy ? "Salvando..." : "Salvar e entrar"}
+          </button>
+          <button class="btn secondary" type="button" data-action="back-to-email" ${busy ? "disabled" : ""}>
+            Voltar
+          </button>
+        </div>
+      </div>
+    </section>
+  `;
+
+  bindChangePasswordStepEvents();
 }
 
 function renderEmailStep() {
@@ -926,6 +1031,7 @@ function renderSeriesMenu() {
       ? `
             <button class="btn secondary" type="button" data-action="open-config">Configurar liberação</button>
             <button class="btn secondary" type="button" data-action="create-series">Criar série</button>
+            <button class="btn secondary" type="button" data-action="open-leader-access">Senhas dos líderes</button>
           `
       : `
             <button class="btn secondary" type="button" data-action="unlock-admin" ${state.isCheckingAdmin ? "disabled" : ""}>
@@ -1067,6 +1173,10 @@ function bindSeriesMenuEvents() {
     ?.addEventListener("click", openSubjectSettings);
 
   document
+    .querySelector("[data-action='open-leader-access']")
+    ?.addEventListener("click", openLeaderAccess);
+
+  document
     .querySelector("[data-action='create-series']")
     ?.addEventListener("click", () => openSeriesEditor(""));
 
@@ -1108,6 +1218,7 @@ function renderMainMenu() {
             <button class="btn secondary" type="button" data-action="edit-series">Editar série</button>
             <button class="btn secondary" type="button" data-action="create-training">Criar assunto</button>
             <button class="btn secondary" type="button" data-action="edit-training" ${selectedTraining ? "" : "disabled"}>Editar assunto</button>
+            <button class="btn secondary" type="button" data-action="open-leader-access">Senhas dos líderes</button>
           `
       : `
             <button class="btn secondary" type="button" data-action="unlock-admin" ${state.isCheckingAdmin ? "disabled" : ""}>
@@ -1302,6 +1413,261 @@ function bindCodeStepEvents() {
     ?.addEventListener("click", () => sendCode(state.loginPurpose));
 }
 
+const LEADER_ACCESS_LABELS = {
+  "sem-senha": { texto: "Ainda não criou senha", classe: "tag" },
+  "com-senha": { texto: "Senha criada", classe: "tag tag-done" },
+  temporaria: { texto: "Senha temporária ativa", classe: "tag tag-progress" },
+  "temporaria-expirada": { texto: "Temporária vencida", classe: "tag tag-lock" },
+};
+
+function renderLeaderAccess() {
+  const busy = state.leaderAccessStatus === "loading";
+  const result = state.leaderAccessResult;
+
+  const resultMarkup = result
+    ? `
+        <div class="config-item" style="border-color:var(--primary);">
+          <p class="eyebrow">Senha temporária de ${escapeHtml(result.nome)}</p>
+          <p class="temp-password">${escapeHtml(result.senhaTemporaria)}</p>
+          <p class="hint">
+            Entregue esta senha a ${escapeHtml(getFirstName(result.nome))} — em mãos, por telefone
+            ou por mensagem. Ela vale por ${escapeHtml(result.validaAte)} e, ao entrar,
+            o aplicativo pede que ele crie uma senha própria.
+          </p>
+          <p class="hint"><strong>Anote agora:</strong> esta senha não aparece de novo.</p>
+          <div class="actions">
+            <button class="btn secondary" type="button" data-action="dismiss-reset">Entendi, fechar</button>
+          </div>
+        </div>
+      `
+    : "";
+
+  const listMarkup = state.leaderAccessList.length
+    ? state.leaderAccessList.map(getLeaderAccessRowMarkup).join("")
+    : `<p class="hint">${busy ? "Buscando..." : "Nenhum líder encontrado com esse nome ou e-mail."}</p>`;
+
+  app.innerHTML = `
+    <section class="panel">
+      <div class="hero-strip">
+        <h2>Senhas dos líderes</h2>
+        <p>
+          Use isto quando alguém perder o acesso ao próprio e-mail e não conseguir
+          usar o "Esqueci minha senha".
+        </p>
+      </div>
+      <div class="panel-body">
+        ${resultMarkup}
+
+        <div class="form-grid">
+          <div class="field">
+            <label for="leaderSearchInput">Buscar por nome ou e-mail</label>
+            <input class="input" id="leaderSearchInput" type="search" value="${escapeHtml(state.leaderAccessSearch)}" placeholder="Digite parte do nome" ${busy ? "disabled" : ""} />
+          </div>
+        </div>
+
+        <div class="actions">
+          <button class="btn secondary" type="button" data-action="search-leaders" ${busy ? "disabled" : ""}>
+            ${busy ? "Buscando..." : "Buscar"}
+          </button>
+        </div>
+
+        <div class="config-list" style="margin-top:18px;">
+          ${listMarkup}
+        </div>
+
+        <div class="actions">
+          <button class="btn secondary" type="button" data-action="close-leader-access">Voltar ao menu</button>
+        </div>
+      </div>
+    </section>
+  `;
+
+  bindLeaderAccessEvents();
+}
+
+function getLeaderAccessRowMarkup(leader) {
+  const label = LEADER_ACCESS_LABELS[leader.estado] || LEADER_ACCESS_LABELS["sem-senha"];
+  const isResetting = state.resettingEmail === leader.email;
+
+  return `
+    <article class="config-item">
+      <div class="config-item-head">
+        <div>
+          <p class="config-item-title">${escapeHtml(leader.name)}</p>
+          <p class="hint">${escapeHtml(leader.email)}</p>
+        </div>
+        <span class="${label.classe}">${escapeHtml(label.texto)}</span>
+      </div>
+      <div class="actions">
+        <button class="btn secondary" type="button" data-action="reset-leader" data-email="${escapeHtml(leader.email)}" ${isResetting ? "disabled" : ""}>
+          ${isResetting ? "Gerando..." : "Gerar senha temporária"}
+        </button>
+      </div>
+    </article>
+  `;
+}
+
+function bindLeaderAccessEvents() {
+  const input = document.querySelector("#leaderSearchInput");
+
+  input?.addEventListener("input", (event) => {
+    state.leaderAccessSearch = event.target.value;
+  });
+
+  bindEnterKey(input, loadLeaderAccessList);
+
+  document
+    .querySelector("[data-action='search-leaders']")
+    ?.addEventListener("click", loadLeaderAccessList);
+
+  document
+    .querySelector("[data-action='close-leader-access']")
+    ?.addEventListener("click", closeLeaderAccess);
+
+  document
+    .querySelector("[data-action='dismiss-reset']")
+    ?.addEventListener("click", () => {
+      state.leaderAccessResult = null;
+      render();
+    });
+
+  document.querySelectorAll("[data-action='reset-leader']").forEach((button) => {
+    button.addEventListener("click", (event) => {
+      resetLeaderPassword(event.currentTarget.dataset.email || "");
+    });
+  });
+}
+
+function openLeaderAccess() {
+  if (!state.adminUnlocked || !canManageSubjects()) {
+    showToast("Informe a senha administrativa para gerenciar o acesso.", "error");
+    return;
+  }
+
+  state.leaderAccessMode = true;
+  state.leaderAccessResult = null;
+  state.leaderAccessList = [];
+  state.leaderAccessSearch = "";
+  render();
+  loadLeaderAccessList();
+}
+
+function closeLeaderAccess() {
+  state.leaderAccessMode = false;
+  state.leaderAccessResult = null;
+  state.leaderAccessList = [];
+  state.leaderAccessSearch = "";
+  state.leaderAccessStatus = "idle";
+  render();
+}
+
+async function loadLeaderAccessList() {
+  // Lidos antes do render: se o acesso administrativo cair no meio, o
+  // resetAdminAccess() limpa o termo e o token, e a busca sairia vazia.
+  const term = state.leaderAccessSearch.trim();
+  const adminToken = state.adminToken;
+
+  state.leaderAccessStatus = "loading";
+  render();
+
+  try {
+    const params = new URLSearchParams();
+
+    if (term) {
+      params.set("busca", term);
+    }
+
+    const suffix = params.toString() ? `?${params.toString()}` : "";
+    const response = await fetch(`${LEADERS_ENDPOINT}${suffix}`, {
+      cache: "no-store",
+      headers: {
+        Accept: "application/json",
+        "x-admin-token": adminToken,
+      },
+    });
+    const result = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+      throw new Error(result.error || "Não foi possível carregar os líderes.");
+    }
+
+    state.leaderAccessList = Array.isArray(result.leaders) ? result.leaders : [];
+    state.leaderAccessStatus = "idle";
+  } catch (error) {
+    state.leaderAccessList = [];
+    state.leaderAccessStatus = "idle";
+    showToast(error.message, "error");
+  }
+
+  render();
+}
+
+async function resetLeaderPassword(email) {
+  if (!email) {
+    return;
+  }
+
+  const adminToken = state.adminToken;
+
+  state.resettingEmail = email;
+  render();
+
+  try {
+    const response = await fetch(LEADERS_ENDPOINT, {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+        "x-admin-token": adminToken,
+      },
+      body: JSON.stringify({ acao: "redefinir", email }),
+    });
+    const result = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+      throw new Error(result.error || "Não foi possível gerar a senha temporária.");
+    }
+
+    state.leaderAccessResult = result;
+    state.resettingEmail = "";
+    render();
+    window.scrollTo({ top: 0, behavior: "smooth" });
+    await loadLeaderAccessList();
+  } catch (error) {
+    state.resettingEmail = "";
+    showToast(error.message, "error");
+    render();
+  }
+}
+
+function getFirstName(name) {
+  return String(name || "").trim().split(/\s+/)[0] || "ele";
+}
+
+function bindChangePasswordStepEvents() {
+  document
+    .querySelector("#newPasswordInput")
+    ?.addEventListener("input", (event) => {
+      state.password = event.target.value;
+    });
+
+  const confirmInput = document.querySelector("#confirmPasswordInput");
+
+  confirmInput?.addEventListener("input", (event) => {
+    state.passwordConfirm = event.target.value;
+  });
+
+  bindEnterKey(confirmInput, changeTemporaryPassword);
+
+  document
+    .querySelector("[data-action='change-password']")
+    ?.addEventListener("click", changeTemporaryPassword);
+
+  document
+    .querySelector("[data-action='back-to-email']")
+    ?.addEventListener("click", backToEmailStep);
+}
+
 function bindEnterKey(input, action) {
   input?.addEventListener("keydown", (event) => {
     if (event.key === "Enter") {
@@ -1359,6 +1725,10 @@ function bindMainMenuEvents() {
   document
     .querySelector("[data-action='open-config']")
     ?.addEventListener("click", openSubjectSettings);
+
+  document
+    .querySelector("[data-action='open-leader-access']")
+    ?.addEventListener("click", openLeaderAccess);
 
   document
     .querySelector("[data-action='edit-series']")
@@ -2928,6 +3298,13 @@ function resetAdminAccess() {
   state.isSavingTraining = false;
   state.isSavingSeries = false;
   state.isSavingConfig = false;
+  state.leaderAccessMode = false;
+  state.leaderAccessList = [];
+  state.leaderAccessSearch = "";
+  state.leaderAccessStatus = "idle";
+  // A senha temporária gerada nunca sobrevive a uma saída de tela.
+  state.leaderAccessResult = null;
+  state.resettingEmail = "";
 }
 
 function getMemberIdentityMarkup({ showEmail = true } = {}) {

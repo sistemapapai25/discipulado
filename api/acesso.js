@@ -22,7 +22,13 @@ import { isEmailConfigured, sendVerificationCodeEmail } from "./email.js";
 import { checkRateLimit, getClientIp, registerAttempt } from "./rate-limit.js";
 import { createLeaderToken, isSessionSecretConfigured } from "./session-auth.js";
 
-const ACTIONS = ["status", "enviar-codigo", "definir-senha", "entrar"];
+const ACTIONS = [
+  "status",
+  "enviar-codigo",
+  "definir-senha",
+  "entrar",
+  "trocar-senha",
+];
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
@@ -95,6 +101,8 @@ export default async function handler(req, res) {
         return await handleSetPassword({ req, res, sql, email, payload });
       case "entrar":
         return await handleSignIn({ req, res, sql, email, payload });
+      case "trocar-senha":
+        return await handleChangePassword({ req, res, sql, email, payload });
       default:
         return res.status(400).json({ error: "Ação desconhecida." });
     }
@@ -231,11 +239,75 @@ async function handleSignIn({ req, res, sql, email, payload }) {
     return res.status(401).json({ error: "E-mail ou senha incorretos." });
   }
 
+  if (credential.senha_temporaria && credential.senha_expirada) {
+    return res.status(401).json({
+      error:
+        "Esta senha temporária venceu. Peça uma nova ao administrador ou use 'Esqueci minha senha'.",
+    });
+  }
+
+  // Senha temporária não abre o aplicativo: ela só serve para provar quem é a
+  // pessoa e trocar por uma senha própria. Por isso não devolve token aqui.
+  if (credential.senha_temporaria) {
+    return res.status(200).json({ precisaTrocarSenha: true });
+  }
+
   const person = await findMemberOrFail({ req, res, email });
 
   if (!person) {
     return res;
   }
+
+  return res.status(200).json(await buildSignedInResponse(person, email));
+}
+
+/**
+ * Troca a senha temporária por uma definitiva. Não pede código: quem digitou a
+ * senha temporária certa já provou que a recebeu do administrador.
+ */
+async function handleChangePassword({ req, res, sql, email, payload }) {
+  const currentPassword = String(payload.senhaAtual || "");
+  const newPassword = String(payload.senha || "");
+
+  if (!currentPassword) {
+    return res.status(400).json({ error: "Informe a senha temporária." });
+  }
+
+  const strengthError = validatePasswordStrength(newPassword);
+
+  if (strengthError) {
+    return res.status(400).json({ error: strengthError });
+  }
+
+  const credential = await findCredentialByEmail(sql, email);
+
+  if (
+    !credential ||
+    !(await verifyPassword(currentPassword, credential.senha_hash))
+  ) {
+    await registerAttempt("acesso", getClientIp(req));
+    return res.status(401).json({ error: "E-mail ou senha incorretos." });
+  }
+
+  if (credential.senha_temporaria && credential.senha_expirada) {
+    return res.status(401).json({
+      error:
+        "Esta senha temporária venceu. Peça uma nova ao administrador ou use 'Esqueci minha senha'.",
+    });
+  }
+
+  const person = await findMemberOrFail({ req, res, email });
+
+  if (!person) {
+    return res;
+  }
+
+  await savePassword(sql, {
+    leaderId: String(person.id),
+    email: person.email || email,
+    password: newPassword,
+    temporary: false,
+  });
 
   return res.status(200).json(await buildSignedInResponse(person, email));
 }

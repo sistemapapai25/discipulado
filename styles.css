@@ -770,6 +770,24 @@ h1 {
   font-weight: 600;
 }
 
+/* Senha temporaria: grande e destacada, porque o administrador precisa ler e
+   repassar sem errar um caractere. */
+.temp-password {
+  margin: 8px 0 12px;
+  padding: 14px 12px;
+  border: 1px dashed var(--primary);
+  border-radius: var(--radius);
+  background: var(--surface-soft);
+  color: var(--primary-dark);
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  font-size: 1.5rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-align: center;
+  user-select: all;
+  word-break: break-all;
+}
+
 .summary {
   display: grid;
   gap: 12px;

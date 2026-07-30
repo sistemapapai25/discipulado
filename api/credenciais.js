@@ -11,6 +11,11 @@ const CODE_TTL_MINUTES = 15;
 const CODE_MAX_ATTEMPTS = 5;
 const MIN_PASSWORD_LENGTH = 8;
 
+const TEMPORARY_PASSWORD_TTL_HOURS = 48;
+// Sem 0/O nem 1/I/L: a senha temporaria e ditada por telefone ou copiada a mao.
+const TEMPORARY_LETTERS = "ABCDEFGHJKMNPQRSTUVWXYZ";
+const TEMPORARY_DIGITS = "23456789";
+
 export function getSql() {
   return neon(process.env.DATABASE_URL);
 }
@@ -31,6 +36,13 @@ export async function ensureCredentialTables(sql) {
       on credenciais_lideres (lower(email))
   `;
 
+  // Colunas da senha temporaria: chegam depois, entao entram por alter.
+  await sql`
+    alter table credenciais_lideres
+      add column if not exists senha_temporaria boolean not null default false,
+      add column if not exists senha_expira_em timestamptz
+  `;
+
   await sql`
     create table if not exists codigos_verificacao (
       email text primary key,
@@ -44,7 +56,13 @@ export async function ensureCredentialTables(sql) {
 
 export async function findCredentialByEmail(sql, email) {
   const [row] = await sql`
-    select lider_id, email, senha_hash
+    select
+      lider_id,
+      email,
+      senha_hash,
+      senha_temporaria,
+      senha_expira_em,
+      senha_expira_em is not null and senha_expira_em < now() as senha_expirada
     from credenciais_lideres
     where lower(email) = ${normalizeEmail(email)}
     limit 1
@@ -53,25 +71,92 @@ export async function findCredentialByEmail(sql, email) {
   return row || null;
 }
 
+/**
+ * Status de senha de varios e-mails de uma vez, para a tela do administrador
+ * nao fazer uma consulta por lider.
+ */
+export async function findCredentialsByEmails(sql, emails) {
+  const normalized = emails.map(normalizeEmail).filter(Boolean);
+
+  if (!normalized.length) {
+    return new Map();
+  }
+
+  const rows = await sql`
+    select
+      lower(email) as email,
+      senha_temporaria,
+      senha_expira_em,
+      senha_expira_em is not null and senha_expira_em < now() as senha_expirada
+    from credenciais_lideres
+    where lower(email) = any(${normalized})
+  `;
+
+  return new Map(rows.map((row) => [row.email, row]));
+}
+
 export async function hasPassword(sql, email) {
   return Boolean(await findCredentialByEmail(sql, email));
 }
 
-export async function savePassword(sql, { leaderId, email, password }) {
+export async function savePassword(
+  sql,
+  { leaderId, email, password, temporary = false },
+) {
   const senhaHash = await hashSecret(password);
   const normalizedEmail = normalizeEmail(email);
+  const isTemporary = Boolean(temporary);
+  const horas = TEMPORARY_PASSWORD_TTL_HOURS;
 
-  // Conflito por lider_id e por e-mail: a pessoa pode redefinir a senha, e o
-  // mesmo lider nunca deve terminar com duas credenciais.
+  // O prazo entra por um `case` com parametro numerico: o driver do Neon nao
+  // compoe um template dentro do outro.
   await sql`
-    insert into credenciais_lideres (lider_id, email, senha_hash)
-    values (${leaderId}, ${normalizedEmail}, ${senhaHash})
+    insert into credenciais_lideres (
+      lider_id, email, senha_hash, senha_temporaria, senha_expira_em
+    )
+    values (
+      ${leaderId},
+      ${normalizedEmail},
+      ${senhaHash},
+      ${isTemporary},
+      case when ${isTemporary} then now() + make_interval(hours => ${horas}) else null end
+    )
     on conflict (lider_id) do update
     set
       email = ${normalizedEmail},
       senha_hash = ${senhaHash},
+      senha_temporaria = ${isTemporary},
+      senha_expira_em = case
+        when ${isTemporary} then now() + make_interval(hours => ${horas})
+        else null
+      end,
       atualizado_em = now()
   `;
+}
+
+/**
+ * Senha temporaria legivel: dois grupos de quatro, com letras e digitos, sem
+ * caracteres que se confundem. Sempre tem pelo menos uma letra e um digito.
+ */
+export function generateTemporaryPassword() {
+  const alfabeto = TEMPORARY_LETTERS + TEMPORARY_DIGITS;
+  const caracteres = [
+    pickRandom(TEMPORARY_LETTERS),
+    pickRandom(TEMPORARY_DIGITS),
+    ...Array.from({ length: 6 }, () => pickRandom(alfabeto)),
+  ];
+
+  // Embaralha para a letra e o digito garantidos nao ficarem sempre na frente.
+  for (let index = caracteres.length - 1; index > 0; index -= 1) {
+    const alvo = randomInt(0, index + 1);
+    [caracteres[index], caracteres[alvo]] = [caracteres[alvo], caracteres[index]];
+  }
+
+  return `${caracteres.slice(0, 4).join("")}-${caracteres.slice(4).join("")}`;
+}
+
+function pickRandom(alfabeto) {
+  return alfabeto[randomInt(0, alfabeto.length)];
 }
 
 export function validatePasswordStrength(password) {

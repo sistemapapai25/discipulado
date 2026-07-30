@@ -1216,6 +1216,7 @@ function renderMainMenu() {
       ? `
             <button class="btn secondary" type="button" data-action="open-config">Configurar liberação</button>
             <button class="btn secondary" type="button" data-action="edit-series">Editar série</button>
+            <button class="btn secondary" type="button" data-action="create-series">Criar série</button>
             <button class="btn secondary" type="button" data-action="create-training">Criar assunto</button>
             <button class="btn secondary" type="button" data-action="edit-training" ${selectedTraining ? "" : "disabled"}>Editar assunto</button>
             <button class="btn secondary" type="button" data-action="open-leader-access">Senhas dos líderes</button>
@@ -1733,6 +1734,12 @@ function bindMainMenuEvents() {
   document
     .querySelector("[data-action='edit-series']")
     ?.addEventListener("click", () => openSeriesEditor(state.selectedSeriesId));
+
+  // Criar série também aqui: com uma série só, a tela de escolha é pulada e o
+  // botão de lá ficava inalcançável — não dava para criar a segunda.
+  document
+    .querySelector("[data-action='create-series']")
+    ?.addEventListener("click", () => openSeriesEditor(""));
 
   document
     .querySelector("[data-action='unlock-admin']")

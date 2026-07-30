@@ -5,6 +5,7 @@
   "type": "module",
   "dependencies": {
     "@neondatabase/serverless": "latest",
-    "@supabase/supabase-js": "latest"
+    "@supabase/supabase-js": "latest",
+    "resend": "latest"
   }
 }

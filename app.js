@@ -24,6 +24,15 @@ const state = {
   leader: null,
   leaderToken: "",
   email: "",
+  loginStep: "email",
+  loginName: "",
+  loginPurpose: "criar",
+  codeDestination: "",
+  // Senha e código nunca vão para o localStorage: só vivem em memória.
+  password: "",
+  passwordConfirm: "",
+  code: "",
+  isSendingCode: false,
   selectedLeaderId: "",
   selectedLeaderName: "",
   ministry: "",
@@ -136,7 +145,29 @@ function getChurchLogoMarkup(className = "") {
   return `<span class="${classAttribute}" aria-label="Logo ${escapeHtml(CHURCH_CONFIG.name)}">${escapeHtml(getChurchInitials(CHURCH_CONFIG.name))}</span>`;
 }
 
-async function requestAccess() {
+async function postAccess(body) {
+  const response = await fetch(ACCESS_ENDPOINT, {
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+  const result = await response.json().catch(() => ({}));
+
+  if (!response.ok) {
+    throw new Error(result.error || "Não foi possível validar seu acesso.");
+  }
+
+  return result;
+}
+
+/**
+ * Primeira etapa: descobre se o e-mail é de um membro ativo e se ele já tem
+ * senha, para mandar a pessoa para a tela certa.
+ */
+async function checkEmailStep() {
   const email = state.email.trim().toLowerCase();
 
   if (!isValidEmail(email)) {
@@ -145,25 +176,115 @@ async function requestAccess() {
     return;
   }
 
+  state.email = email;
   state.leaderStatus = "loading";
   render();
 
   try {
-    const response = await fetch(ACCESS_ENDPOINT, {
-      method: "POST",
-      headers: {
-        Accept: "application/json",
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ email }),
-    });
-    const result = await response.json().catch(() => ({}));
+    const result = await postAccess({ acao: "status", email });
 
-    if (!response.ok) {
-      throw new Error(result.error || "Não foi possível validar seu acesso.");
+    state.loginName = result.nome || "";
+    state.leaderStatus = "idle";
+
+    if (result.estado === "com-senha") {
+      state.loginStep = "senha";
+      state.password = "";
+      render();
+      setTimeout(() => document.querySelector("#passwordInput")?.focus(), 50);
+      saveDraft();
+      return;
     }
 
-    state.email = email;
+    // Primeiro acesso: o código por e-mail é o que garante que quem cria a
+    // senha é o dono do e-mail, e não quem chegou primeiro.
+    await sendCode("criar");
+  } catch (error) {
+    state.leaderStatus = "error";
+    showToast(error.message, "error");
+    render();
+  }
+}
+
+async function sendCode(purpose) {
+  state.isSendingCode = true;
+  render();
+
+  try {
+    const result = await postAccess({
+      acao: "enviar-codigo",
+      email: state.email,
+    });
+
+    state.loginPurpose = purpose;
+    state.codeDestination = result.destino || "";
+    state.loginStep = "codigo";
+    state.code = "";
+    state.password = "";
+    state.passwordConfirm = "";
+    state.leaderStatus = "idle";
+    state.isSendingCode = false;
+    saveDraft();
+    render();
+    showToast("Código enviado. Confira sua caixa de entrada.", "success");
+    setTimeout(() => document.querySelector("#codeInput")?.focus(), 50);
+  } catch (error) {
+    state.isSendingCode = false;
+    state.leaderStatus = "idle";
+    render();
+    showToast(error.message, "error");
+  }
+}
+
+async function savePasswordAndSignIn() {
+  const code = state.code.replace(/\D/g, "");
+
+  if (code.length !== 6) {
+    showToast("Digite o código de 6 dígitos que chegou no seu e-mail.", "error");
+    document.querySelector("#codeInput")?.focus();
+    return;
+  }
+
+  if (state.password.length < 8) {
+    showToast("A senha precisa ter pelo menos 8 caracteres.", "error");
+    document.querySelector("#newPasswordInput")?.focus();
+    return;
+  }
+
+  if (state.password !== state.passwordConfirm) {
+    showToast("As duas senhas não são iguais.", "error");
+    document.querySelector("#confirmPasswordInput")?.focus();
+    return;
+  }
+
+  await completeSignIn({
+    acao: "definir-senha",
+    email: state.email,
+    codigo: code,
+    senha: state.password,
+  });
+}
+
+async function signInWithPassword() {
+  if (!state.password) {
+    showToast("Digite sua senha.", "error");
+    document.querySelector("#passwordInput")?.focus();
+    return;
+  }
+
+  await completeSignIn({
+    acao: "entrar",
+    email: state.email,
+    senha: state.password,
+  });
+}
+
+async function completeSignIn(body) {
+  state.leaderStatus = "loading";
+  render();
+
+  try {
+    const result = await postAccess(body);
+
     state.leaderToken = result.token || "";
     state.leader = result.leader || null;
     state.leaders = (result.ministries || [])
@@ -177,9 +298,13 @@ async function requestAccess() {
       : state.leaders[0]?.id || "";
     state.ministry = getDepartmentNames();
     state.leaderStatus = "loaded";
+    clearLoginSecrets();
+    state.loginStep = "email";
+
     if (!canManageSubjects()) {
       resetAdminAccess();
     }
+
     await loadLeaderProgress();
     ensureSelectableSeries();
     ensureSelectableTraining();
@@ -195,12 +320,27 @@ async function requestAccess() {
     state.selectedLeaderId = "";
     state.selectedLeaderName = "";
     state.ministry = "";
-    state.leaderStatus = "error";
+    state.leaderStatus = "idle";
     saveDraft();
     showToast(error.message, "error");
   }
 
   render();
+}
+
+function backToEmailStep() {
+  state.loginStep = "email";
+  state.leaderStatus = "idle";
+  clearLoginSecrets();
+  render();
+  setTimeout(() => document.querySelector("#emailInput")?.focus(), 50);
+}
+
+function clearLoginSecrets() {
+  state.password = "";
+  state.passwordConfirm = "";
+  state.code = "";
+  state.isSendingCode = false;
 }
 
 async function loadSavedAnswersForSelectedTraining() {
@@ -600,6 +740,22 @@ function updateProgress() {
 }
 
 function renderLogin() {
+  if (state.loginStep === "senha") {
+    renderPasswordStep();
+    return;
+  }
+
+  if (state.loginStep === "codigo") {
+    renderCodeStep();
+    return;
+  }
+
+  renderEmailStep();
+}
+
+function renderEmailStep() {
+  const busy = state.leaderStatus === "loading";
+
   app.innerHTML = `
     <section class="panel">
       <div class="hero-strip">
@@ -610,20 +766,117 @@ function renderLogin() {
         <div class="form-grid">
           <div class="field">
             <label for="emailInput">Digite seu E-mail</label>
-            <input class="input" id="emailInput" type="email" value="${escapeHtml(state.email)}" placeholder="seuemail@exemplo.com" autocomplete="email" ${state.leaderStatus === "loading" ? "disabled" : ""} />
+            <input class="input" id="emailInput" type="email" value="${escapeHtml(state.email)}" placeholder="seuemail@exemplo.com" autocomplete="email" ${busy ? "disabled" : ""} />
           </div>
         </div>
 
         <div class="actions">
-          <button class="btn" type="button" data-action="access" ${state.leaderStatus === "loading" ? "disabled" : ""}>
-            ${state.leaderStatus === "loading" ? "Verificando..." : "Entrar"}
+          <button class="btn" type="button" data-action="check-email" ${busy ? "disabled" : ""}>
+            ${busy ? "Verificando..." : "Continuar"}
           </button>
         </div>
       </div>
     </section>
   `;
 
-  bindLoginEvents();
+  bindEmailStepEvents();
+}
+
+function renderPasswordStep() {
+  const busy = state.leaderStatus === "loading";
+  const greeting = state.loginName
+    ? `Olá, ${escapeHtml(state.loginName)}!`
+    : "Bem-vindo de volta!";
+
+  app.innerHTML = `
+    <section class="panel">
+      <div class="hero-strip">
+        <h2>${greeting}</h2>
+        <p>Digite sua senha para entrar no discipulado.</p>
+      </div>
+      <div class="panel-body">
+        <div class="form-grid">
+          <div class="field">
+            <label class="field-label">E-mail</label>
+            <p class="status-line">${escapeHtml(state.email)}</p>
+          </div>
+          <div class="field">
+            <label for="passwordInput">Sua senha</label>
+            <input class="input" id="passwordInput" type="password" value="${escapeHtml(state.password)}" placeholder="Digite sua senha" autocomplete="current-password" ${busy ? "disabled" : ""} />
+          </div>
+        </div>
+
+        <div class="actions">
+          <button class="btn" type="button" data-action="sign-in" ${busy ? "disabled" : ""}>
+            ${busy ? "Entrando..." : "Entrar"}
+          </button>
+          <button class="btn secondary" type="button" data-action="back-to-email" ${busy ? "disabled" : ""}>
+            Usar outro e-mail
+          </button>
+        </div>
+
+        <div class="mini-row" style="margin-top:14px;justify-content:center;">
+          <button class="btn link-button" type="button" data-action="forgot-password" ${state.isSendingCode ? "disabled" : ""}>
+            ${state.isSendingCode ? "Enviando código..." : "Esqueci minha senha"}
+          </button>
+        </div>
+      </div>
+    </section>
+  `;
+
+  bindPasswordStepEvents();
+}
+
+function renderCodeStep() {
+  const busy = state.leaderStatus === "loading";
+  const isReset = state.loginPurpose === "redefinir";
+  const destination = state.codeDestination || state.email;
+
+  app.innerHTML = `
+    <section class="panel">
+      <div class="hero-strip">
+        <h2>${isReset ? "Redefinir sua senha" : "Criar sua senha"}</h2>
+        <p>
+          Enviamos um código de 6 dígitos para <strong>${escapeHtml(destination)}</strong>.
+          O código vale por 15 minutos.
+        </p>
+      </div>
+      <div class="panel-body">
+        <div class="form-grid">
+          <div class="field">
+            <label for="codeInput">Código recebido por e-mail</label>
+            <input class="input code-input" id="codeInput" type="text" value="${escapeHtml(state.code)}" placeholder="000000" inputmode="numeric" autocomplete="one-time-code" maxlength="6" ${busy ? "disabled" : ""} />
+          </div>
+          <div class="field">
+            <label for="newPasswordInput">${isReset ? "Nova senha" : "Crie sua senha"}</label>
+            <input class="input" id="newPasswordInput" type="password" value="${escapeHtml(state.password)}" placeholder="Pelo menos 8 caracteres" autocomplete="new-password" ${busy ? "disabled" : ""} />
+            <p class="hint">Use pelo menos 8 caracteres, com letras e números.</p>
+          </div>
+          <div class="field">
+            <label for="confirmPasswordInput">Repita a senha</label>
+            <input class="input" id="confirmPasswordInput" type="password" value="${escapeHtml(state.passwordConfirm)}" placeholder="Digite a senha de novo" autocomplete="new-password" ${busy ? "disabled" : ""} />
+          </div>
+        </div>
+
+        <div class="actions">
+          <button class="btn" type="button" data-action="save-password" ${busy ? "disabled" : ""}>
+            ${busy ? "Salvando..." : isReset ? "Salvar e entrar" : "Criar senha e entrar"}
+          </button>
+          <button class="btn secondary" type="button" data-action="back-to-email" ${busy ? "disabled" : ""}>
+            Voltar
+          </button>
+        </div>
+
+        <div class="mini-row" style="margin-top:14px;justify-content:center;">
+          <button class="btn link-button" type="button" data-action="resend-code" ${state.isSendingCode ? "disabled" : ""}>
+            ${state.isSendingCode ? "Enviando..." : "Não recebi o código, enviar de novo"}
+          </button>
+        </div>
+      </div>
+    </section>
+  `;
+
+  bindCodeStepEvents();
 }
 
 function renderSeriesMenu() {
@@ -941,26 +1194,87 @@ function getTrainingOptionMarkup(entry) {
   `;
 }
 
-function bindLoginEvents() {
+function bindEmailStepEvents() {
+  const input = document.querySelector("#emailInput");
+
+  input?.addEventListener("input", (event) => {
+    state.email = event.target.value;
+    saveDraft();
+  });
+
+  bindEnterKey(input, checkEmailStep);
+
   document
-    .querySelector("#emailInput")
+    .querySelector("[data-action='check-email']")
+    ?.addEventListener("click", checkEmailStep);
+}
+
+function bindPasswordStepEvents() {
+  const input = document.querySelector("#passwordInput");
+
+  input?.addEventListener("input", (event) => {
+    state.password = event.target.value;
+  });
+
+  bindEnterKey(input, signInWithPassword);
+
+  document
+    .querySelector("[data-action='sign-in']")
+    ?.addEventListener("click", signInWithPassword);
+
+  document
+    .querySelector("[data-action='back-to-email']")
+    ?.addEventListener("click", backToEmailStep);
+
+  document
+    .querySelector("[data-action='forgot-password']")
+    ?.addEventListener("click", () => sendCode("redefinir"));
+}
+
+function bindCodeStepEvents() {
+  const codeInput = document.querySelector("#codeInput");
+
+  codeInput?.addEventListener("input", (event) => {
+    // Só dígitos: colar o código do e-mail com espaço em volta continua valendo.
+    const digits = event.target.value.replace(/\D/g, "").slice(0, 6);
+    state.code = digits;
+    event.target.value = digits;
+  });
+
+  document
+    .querySelector("#newPasswordInput")
     ?.addEventListener("input", (event) => {
-      state.email = event.target.value;
-      saveDraft();
+      state.password = event.target.value;
     });
 
-  document
-    .querySelector("#emailInput")
-    ?.addEventListener("keydown", (event) => {
-      if (event.key === "Enter") {
-        event.preventDefault();
-        requestAccess();
-      }
-    });
+  const confirmInput = document.querySelector("#confirmPasswordInput");
+
+  confirmInput?.addEventListener("input", (event) => {
+    state.passwordConfirm = event.target.value;
+  });
+
+  bindEnterKey(confirmInput, savePasswordAndSignIn);
 
   document
-    .querySelector("[data-action='access']")
-    ?.addEventListener("click", requestAccess);
+    .querySelector("[data-action='save-password']")
+    ?.addEventListener("click", savePasswordAndSignIn);
+
+  document
+    .querySelector("[data-action='back-to-email']")
+    ?.addEventListener("click", backToEmailStep);
+
+  document
+    .querySelector("[data-action='resend-code']")
+    ?.addEventListener("click", () => sendCode(state.loginPurpose));
+}
+
+function bindEnterKey(input, action) {
+  input?.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      action();
+    }
+  });
 }
 
 function bindMainMenuEvents() {
@@ -1117,6 +1431,10 @@ function signOut() {
   state.submitted = false;
   state.submissionId = "";
   state.leaderStatus = "idle";
+  state.loginStep = "email";
+  state.loginName = "";
+  state.codeDestination = "";
+  clearLoginSecrets();
   resetAdminAccess();
   saveDraft();
   render();
@@ -2924,6 +3242,11 @@ function restoreDraft() {
     state.isSavingModule = false;
     state.isSubmitting = false;
     state.isLoadingSavedAnswers = false;
+    // Senha e código nunca são gravados; o fluxo de login sempre começa do zero.
+    state.loginStep = "email";
+    state.loginName = "";
+    state.codeDestination = "";
+    clearLoginSecrets();
   } catch {
     clearDraft();
   }

@@ -747,6 +747,29 @@ h1 {
   text-underline-offset: 3px;
 }
 
+.link-button:disabled {
+  color: var(--muted);
+  text-decoration: none;
+  cursor: default;
+}
+
+/* Campo do código: dígitos grandes e espaçados, para conferir com o e-mail
+   sem esforço e evitar erro de digitação. */
+.code-input {
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  font-size: 1.5rem;
+  font-weight: 700;
+  letter-spacing: 0.38em;
+  text-align: center;
+  text-indent: 0.38em;
+  min-height: 60px;
+}
+
+.code-input::placeholder {
+  color: #c3d0ca;
+  font-weight: 600;
+}
+
 .summary {
   display: grid;
   gap: 12px;

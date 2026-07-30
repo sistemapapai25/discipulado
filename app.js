@@ -236,6 +236,8 @@ async function sendCode(purpose) {
 }
 
 async function savePasswordAndSignIn() {
+  syncLoginFieldsFromDom();
+
   const code = state.code.replace(/\D/g, "");
 
   if (code.length !== 6) {
@@ -265,6 +267,8 @@ async function savePasswordAndSignIn() {
 }
 
 async function signInWithPassword() {
+  syncLoginFieldsFromDom();
+
   if (!state.password) {
     showToast("Digite sua senha.", "error");
     document.querySelector("#passwordInput")?.focus();
@@ -334,6 +338,36 @@ function backToEmailStep() {
   clearLoginSecrets();
   render();
   setTimeout(() => document.querySelector("#emailInput")?.focus(), 50);
+}
+
+/**
+ * Lê os campos direto do DOM antes de enviar. O evento "input" não é confiável
+ * quando quem preenche não é o dedo do usuário: o preenchimento automático do
+ * código (autocomplete="one-time-code"), o gerenciador de senhas e alguns
+ * teclados de celular escrevem no campo sem disparar o evento. Sem isto, a tela
+ * mostra o código e o aplicativo envia vazio.
+ */
+function syncLoginFieldsFromDom() {
+  const code = document.querySelector("#codeInput");
+  const newPassword = document.querySelector("#newPasswordInput");
+  const confirmPassword = document.querySelector("#confirmPasswordInput");
+  const password = document.querySelector("#passwordInput");
+
+  if (code && typeof code.value === "string") {
+    state.code = code.value.replace(/\D/g, "").slice(0, 6);
+  }
+
+  if (newPassword && typeof newPassword.value === "string") {
+    state.password = newPassword.value;
+  }
+
+  if (confirmPassword && typeof confirmPassword.value === "string") {
+    state.passwordConfirm = confirmPassword.value;
+  }
+
+  if (password && typeof password.value === "string") {
+    state.password = password.value;
+  }
 }
 
 function clearLoginSecrets() {

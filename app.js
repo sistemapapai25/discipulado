@@ -26,13 +26,17 @@ const state = {
   ministry: "",
   selectedTrainingId: "",
   creatorMode: false,
+  configMode: false,
+  configDraft: [],
   editingTrainingId: "",
   trainingDraft: createEmptyTrainingDraft(),
+  progressByTraining: {},
   currentModuleIndex: -1,
   answers: {},
   isSubmitting: false,
   isSavingModule: false,
   isSavingTraining: false,
+  isSavingConfig: false,
   isLoadingSavedAnswers: false,
   isCheckingAdmin: false,
   adminUnlocked: false,
@@ -80,6 +84,10 @@ function setupChurchHeader() {
 function getPageTitle() {
   if (!state.leader) {
     return "Acesso do Líder e Voluntário";
+  }
+
+  if (state.configMode) {
+    return "Liberação dos assuntos";
   }
 
   if (state.creatorMode) {
@@ -159,6 +167,8 @@ async function requestAccess() {
     if (!canManageSubjects()) {
       resetAdminAccess();
     }
+    await loadLeaderProgress();
+    ensureSelectableTraining();
     await loadSavedAnswersForSelectedTraining();
 
     saveDraft();
@@ -166,6 +176,7 @@ async function requestAccess() {
     state.leader = null;
     state.leaders = [];
     state.savedModules = [];
+    state.progressByTraining = {};
     state.selectedLeaderId = "";
     state.selectedLeaderName = "";
     state.ministry = "";
@@ -185,7 +196,7 @@ async function loadSavedAnswersForSelectedTraining() {
     return;
   }
 
-  const leaderId = getSelectedLeader()?.userId || state.leader?.id || "";
+  const leaderId = getLeaderId();
 
   if (!leaderId) {
     state.savedModules = [];
@@ -228,6 +239,130 @@ async function loadSavedAnswersForSelectedTraining() {
   saveDraft();
 }
 
+async function loadLeaderProgress() {
+  const leaderId = getLeaderId();
+
+  if (!leaderId) {
+    state.progressByTraining = {};
+    return;
+  }
+
+  try {
+    const params = new URLSearchParams({ lider_id: leaderId });
+    const response = await fetch(`${API_ENDPOINT}?${params.toString()}`, {
+      cache: "no-store",
+      headers: { Accept: "application/json" },
+    });
+    const result = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+      throw new Error(result.error || "Não foi possível carregar seu progresso.");
+    }
+
+    state.progressByTraining = isPlainObject(result.progress) ? result.progress : {};
+  } catch (error) {
+    showToast(error.message, "error");
+  }
+
+  saveDraft();
+}
+
+function getSavedModuleIds(trainingId) {
+  const savedModuleIds = state.progressByTraining[trainingId];
+  return Array.isArray(savedModuleIds) ? savedModuleIds : [];
+}
+
+function markModuleProgress(trainingId, moduleId) {
+  if (!trainingId || !moduleId) {
+    return;
+  }
+
+  const savedModuleIds = new Set(getSavedModuleIds(trainingId));
+  savedModuleIds.add(moduleId);
+
+  state.progressByTraining = {
+    ...state.progressByTraining,
+    [trainingId]: Array.from(savedModuleIds),
+  };
+}
+
+function getTrainingProgress(training) {
+  const savedModuleIds = new Set(getSavedModuleIds(training.id));
+  const total = training.modules.length;
+  const answered = training.modules.filter((module) =>
+    savedModuleIds.has(module.id),
+  ).length;
+
+  return {
+    total,
+    answered,
+    isComplete: total > 0 && answered >= total,
+  };
+}
+
+function getTrainingsWithAccess() {
+  const adminBypass = Boolean(state.adminUnlocked && canManageSubjects());
+  const entries = [];
+  let previousReleased = null;
+
+  getAllTrainings().forEach((training, index) => {
+    const progress = getTrainingProgress(training);
+    const released = training.released !== false;
+    const requiresPrevious = training.requiresPrevious === true;
+    let restrictionReason = "";
+
+    if (!released) {
+      restrictionReason = "Ainda não liberado pela liderança.";
+    } else if (requiresPrevious && previousReleased && !previousReleased.isComplete) {
+      restrictionReason = `Conclua antes: ${previousReleased.title}.`;
+    }
+
+    const entry = {
+      training,
+      position: index + 1,
+      released,
+      requiresPrevious,
+      previousTitle: previousReleased?.title || "",
+      restricted: Boolean(restrictionReason),
+      restrictionReason,
+      locked: Boolean(restrictionReason) && !adminBypass,
+      adminBypass: Boolean(restrictionReason) && adminBypass,
+      ...progress,
+    };
+
+    entries.push(entry);
+
+    if (released) {
+      previousReleased = { title: training.title, isComplete: progress.isComplete };
+    }
+  });
+
+  return entries;
+}
+
+function getTrainingAccess(trainingId) {
+  return (
+    getTrainingsWithAccess().find((entry) => entry.training.id === trainingId) || null
+  );
+}
+
+function ensureSelectableTraining() {
+  const entries = getTrainingsWithAccess();
+  const current = entries.find(
+    (entry) => entry.training.id === state.selectedTrainingId,
+  );
+
+  if (current && !current.locked) {
+    return;
+  }
+
+  const nextTraining =
+    entries.find((entry) => !entry.locked && !entry.isComplete) ||
+    entries.find((entry) => !entry.locked);
+
+  state.selectedTrainingId = nextTraining?.training.id || "";
+}
+
 async function loadTrainings() {
   state.trainingStatus = "loading";
 
@@ -248,10 +383,8 @@ async function loadTrainings() {
       .sort(sortTrainings);
     state.trainingStatus = result.warning ? "warning" : "loaded";
 
-    if (!getAllTrainings().some((training) => training.id === state.selectedTrainingId)) {
-      state.selectedTrainingId = state.trainings[0]?.id || "";
-    }
-
+    await loadLeaderProgress();
+    ensureSelectableTraining();
     await loadSavedAnswersForSelectedTraining();
   } catch (error) {
     state.trainings = [];
@@ -276,7 +409,11 @@ function sortLeaders(firstLeader, secondLeader) {
 function render() {
   if (
     !canManageSubjects() &&
-    (state.adminUnlocked || state.adminToken || state.creatorMode || state.editingTrainingId)
+    (state.adminUnlocked ||
+      state.adminToken ||
+      state.creatorMode ||
+      state.configMode ||
+      state.editingTrainingId)
   ) {
     resetAdminAccess();
   }
@@ -292,15 +429,23 @@ function render() {
 
   if (!state.leader) {
     state.creatorMode = false;
+    state.configMode = false;
     state.editingTrainingId = "";
     renderLogin();
     return;
   }
 
-  if (state.creatorMode && !state.adminUnlocked) {
+  if (!state.adminUnlocked && (state.creatorMode || state.configMode)) {
     state.creatorMode = false;
+    state.configMode = false;
     state.editingTrainingId = "";
     state.isSavingTraining = false;
+    state.isSavingConfig = false;
+  }
+
+  if (state.configMode) {
+    renderSubjectSettings();
+    return;
   }
 
   if (state.creatorMode) {
@@ -335,6 +480,7 @@ function shouldHideTopbar() {
   return Boolean(
     state.leader &&
     !state.creatorMode &&
+    !state.configMode &&
     !state.submitted &&
     state.currentModuleIndex < 0,
   );
@@ -384,12 +530,14 @@ function renderLogin() {
 
 function renderMainMenu() {
   const selectedTraining = getSelectedTraining();
-  const canStart = Boolean(state.leader && selectedTraining);
-  const allTrainings = getAllTrainings();
-  const trainingOptions = allTrainings.map((training) => {
-    const selected = training.id === state.selectedTrainingId ? "selected" : "";
-    return `<option value="${escapeHtml(training.id)}" ${selected}>${escapeHtml(training.title)}</option>`;
-  }).join("");
+  const trainingEntries = getTrainingsWithAccess();
+  const selectedEntry = trainingEntries.find(
+    (entry) => entry.training.id === state.selectedTrainingId,
+  );
+  const canStart = Boolean(state.leader && selectedTraining && !selectedEntry?.locked);
+  const trainingListMarkup = trainingEntries.length
+    ? trainingEntries.map(getTrainingOptionMarkup).join("")
+    : `<p class="hint">Nenhum assunto cadastrado até agora.</p>`;
   const departmentList = state.leaders
     .map((leader) => `<span class="pill">${escapeHtml(leader.ministry)}</span>`)
     .join("");
@@ -407,6 +555,7 @@ function renderMainMenu() {
   const adminActionsMarkup = canManageSubjects()
     ? state.adminUnlocked
       ? `
+            <button class="btn secondary" type="button" data-action="open-config" ${trainingEntries.length ? "" : "disabled"}>Configurar liberação</button>
             <button class="btn secondary" type="button" data-action="create-training">Criar assunto</button>
             <button class="btn secondary" type="button" data-action="edit-training" ${selectedTraining ? "" : "disabled"}>Editar assunto</button>
           `
@@ -438,19 +587,18 @@ function renderMainMenu() {
 
           <div class="field">
             <div class="mini-row">
-              <label for="trainingSelect">Assunto do Discipulado</label>
+              <span class="field-label">Assunto do Discipulado</span>
               <button class="link-button" type="button" data-action="reload-trainings">Atualizar assuntos</button>
             </div>
-            <select class="select" id="trainingSelect" ${allTrainings.length ? "" : "disabled"}>
-              <option value="">${allTrainings.length ? "Selecione um assunto" : "Nenhum assunto cadastrado"}</option>
-              ${trainingOptions}
-            </select>
+            <div class="training-list" role="list">
+              ${trainingListMarkup}
+            </div>
           </div>
 
           <div class="study-confirm">
             <span>Assunto selecionado</span>
             <strong>${escapeHtml(selectedTraining?.title || "Nenhum assunto selecionado")}</strong>
-            <span class="hint">${selectedTraining ? `${selectedTraining.modules.length} módulos com vídeo e questionário integrado.` : "Cadastre ou selecione um assunto para iniciar."}</span>
+            <span class="hint">${selectedTraining ? `${selectedTraining.modules.length} módulos com vídeo e questionário integrado.` : "Escolha um assunto liberado para iniciar."}</span>
             ${savedAnswersMarkup}
           </div>
         </div>
@@ -465,6 +613,64 @@ function renderMainMenu() {
   `;
 
   bindMainMenuEvents();
+}
+
+function getTrainingOptionMarkup(entry) {
+  const isSelected = entry.training.id === state.selectedTrainingId;
+  const classNames = ["training-option"];
+
+  if (isSelected && !entry.locked) {
+    classNames.push("is-selected");
+  }
+
+  if (entry.locked) {
+    classNames.push("is-locked");
+  }
+
+  if (entry.isComplete) {
+    classNames.push("is-complete");
+  }
+
+  const tags = [];
+
+  if (entry.restricted) {
+    tags.push(
+      `<span class="tag tag-lock">🔒 ${escapeHtml(entry.restrictionReason)}</span>`,
+    );
+  }
+
+  if (entry.adminBypass) {
+    tags.push(`<span class="tag tag-admin">Aberto para você (administrador)</span>`);
+  }
+
+  if (entry.isComplete) {
+    tags.push(`<span class="tag tag-done">Concluído · ${entry.total} módulos</span>`);
+  } else if (entry.answered > 0) {
+    tags.push(
+      `<span class="tag tag-progress">Em andamento · ${entry.answered} de ${entry.total} módulos</span>`,
+    );
+  } else if (!entry.locked) {
+    tags.push(`<span class="tag">${entry.total} módulos</span>`);
+  }
+
+  return `
+    <button
+      class="${classNames.join(" ")}"
+      type="button"
+      role="listitem"
+      data-action="select-training"
+      data-training-id="${escapeHtml(entry.training.id)}"
+      aria-pressed="${isSelected && !entry.locked ? "true" : "false"}"
+      ${entry.locked ? "disabled" : ""}
+    >
+      <span class="training-option-order">${entry.locked ? "🔒" : entry.position}</span>
+      <span class="training-option-body">
+        <strong>${escapeHtml(entry.training.title)}</strong>
+        <span class="training-option-tags">${tags.join("")}</span>
+      </span>
+      <span class="training-option-check" aria-hidden="true">${entry.isComplete ? "✓" : ""}</span>
+    </button>
+  `;
 }
 
 function bindLoginEvents() {
@@ -490,22 +696,54 @@ function bindLoginEvents() {
 }
 
 function bindMainMenuEvents() {
-  document
-    .querySelector("#trainingSelect")
-    ?.addEventListener("change", async (event) => {
-      state.selectedTrainingId = event.target.value;
+  document.querySelectorAll("[data-action='select-training']").forEach((button) => {
+    button.addEventListener("click", async (event) => {
+      const trainingId = event.currentTarget.dataset.trainingId || "";
+
+      if (trainingId === state.selectedTrainingId) {
+        return;
+      }
+
+      const entry = getTrainingAccess(trainingId);
+
+      if (entry?.locked) {
+        showToast(entry.restrictionReason, "error");
+        return;
+      }
+
+      state.selectedTrainingId = trainingId;
       state.currentModuleIndex = -1;
       state.answers = {};
       state.savedModules = [];
       state.submissionId = "";
+      state.isLoadingSavedAnswers = true;
       saveDraft();
+      render();
       await loadSavedAnswersForSelectedTraining();
       render();
     });
+  });
 
   document
     .querySelector("[data-action='reload-trainings']")
     ?.addEventListener("click", loadTrainings);
+
+  document
+    .querySelector("[data-action='open-config']")
+    ?.addEventListener("click", () => {
+      if (!state.adminUnlocked || !canManageSubjects()) {
+        showToast("Informe a senha para configurar a liberação.", "error");
+        return;
+      }
+
+      state.configMode = true;
+      state.creatorMode = false;
+      state.editingTrainingId = "";
+      state.currentModuleIndex = -1;
+      state.configDraft = createConfigDraft();
+      render();
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    });
 
   document
     .querySelector("[data-action='unlock-admin']")
@@ -520,6 +758,7 @@ function bindMainMenuEvents() {
       }
 
       state.creatorMode = true;
+      state.configMode = false;
       state.editingTrainingId = "";
       state.currentModuleIndex = -1;
       state.trainingDraft = createEmptyTrainingDraft();
@@ -544,6 +783,7 @@ function bindMainMenuEvents() {
       }
 
       state.creatorMode = true;
+      state.configMode = false;
       state.editingTrainingId = selectedTraining.id;
       state.currentModuleIndex = -1;
       state.trainingDraft = createTrainingDraftFromTraining(selectedTraining);
@@ -558,6 +798,7 @@ function bindMainMenuEvents() {
       state.leader = null;
       state.leaders = [];
       state.savedModules = [];
+      state.progressByTraining = {};
       state.email = "";
       state.selectedLeaderId = "";
       state.selectedLeaderName = "";
@@ -580,6 +821,13 @@ function bindMainMenuEvents() {
       const selectedTraining = getSelectedTraining();
       if (!state.leader || !selectedTraining) {
         showToast("Confirme o e-mail e o assunto.", "error");
+        return;
+      }
+
+      const entry = getTrainingAccess(selectedTraining.id);
+
+      if (entry?.locked) {
+        showToast(entry.restrictionReason, "error");
         return;
       }
 
@@ -787,6 +1035,216 @@ function renderTrainingBuilder() {
   `;
 
   bindTrainingBuilderEvents();
+}
+
+function createConfigDraft() {
+  return getAllTrainings().map((training, index) => ({
+    id: training.id,
+    title: training.title,
+    modules: training.modules.length,
+    released: training.released !== false,
+    requiresPrevious: training.requiresPrevious === true,
+    order: index + 1,
+  }));
+}
+
+function renderSubjectSettings() {
+  const items = state.configDraft;
+  let previousReleasedTitle = "";
+
+  const itemsMarkup = items
+    .map((item, index) => {
+      const prerequisiteHint = !item.requiresPrevious
+        ? "Fica disponível assim que estiver liberado."
+        : previousReleasedTitle
+          ? `Só abre depois que a pessoa concluir: ${previousReleasedTitle}.`
+          : "É o primeiro da fila liberado, então abre direto.";
+
+      if (item.released) {
+        previousReleasedTitle = item.title;
+      }
+
+      return `
+        <article class="config-item ${item.released ? "" : "is-blocked"}">
+          <div class="config-item-head">
+            <span class="config-order">${index + 1}</span>
+            <div class="config-item-title">
+              <strong>${escapeHtml(item.title)}</strong>
+              <span class="hint">${item.modules} módulo(s)</span>
+            </div>
+            <div class="config-move">
+              <button class="icon-button" type="button" data-action="move-subject-up" data-index="${index}" ${index === 0 ? "disabled" : ""} aria-label="Subir ${escapeHtml(item.title)}">↑</button>
+              <button class="icon-button" type="button" data-action="move-subject-down" data-index="${index}" ${index === items.length - 1 ? "disabled" : ""} aria-label="Descer ${escapeHtml(item.title)}">↓</button>
+            </div>
+          </div>
+
+          <label class="switch-row">
+            <input type="checkbox" data-config-field="released" data-index="${index}" ${item.released ? "checked" : ""} />
+            <span>
+              <strong>Liberado para os líderes</strong>
+              <span class="hint">Desligue para segurar o assunto até a hora que você quiser.</span>
+            </span>
+          </label>
+
+          <label class="switch-row">
+            <input type="checkbox" data-config-field="requiresPrevious" data-index="${index}" ${item.requiresPrevious ? "checked" : ""} />
+            <span>
+              <strong>Exige concluir o assunto anterior</strong>
+              <span class="hint">${escapeHtml(prerequisiteHint)}</span>
+            </span>
+          </label>
+        </article>
+      `;
+    })
+    .join("");
+
+  app.innerHTML = `
+    <section class="panel">
+      <div class="panel-header">
+        <p class="eyebrow">Configuração</p>
+        <h2>Liberação dos assuntos</h2>
+        <p>Ordene a fila, escolha quais assuntos já estão liberados e defina quais só abrem depois que a pessoa concluir o anterior.</p>
+      </div>
+      <div class="panel-body">
+        <div class="config-list">
+          ${itemsMarkup || `<p class="hint">Nenhum assunto cadastrado até agora.</p>`}
+        </div>
+
+        <div class="actions split">
+          <button class="btn secondary" type="button" data-action="cancel-config">Voltar ao menu</button>
+          <button class="btn" type="button" data-action="save-config" ${state.isSavingConfig || !items.length ? "disabled" : ""}>
+            ${state.isSavingConfig ? "Salvando..." : "Salvar configuração"}
+          </button>
+        </div>
+      </div>
+    </section>
+  `;
+
+  bindSubjectSettingsEvents();
+}
+
+function bindSubjectSettingsEvents() {
+  document.querySelectorAll("[data-config-field]").forEach((input) => {
+    input.addEventListener("change", (event) => {
+      const item = state.configDraft[Number(event.target.dataset.index)];
+
+      if (item) {
+        item[event.target.dataset.configField] = event.target.checked;
+        render();
+      }
+    });
+  });
+
+  document.querySelectorAll("[data-action='move-subject-up']").forEach((button) => {
+    button.addEventListener("click", (event) => {
+      moveSubject(Number(event.currentTarget.dataset.index), -1);
+    });
+  });
+
+  document.querySelectorAll("[data-action='move-subject-down']").forEach((button) => {
+    button.addEventListener("click", (event) => {
+      moveSubject(Number(event.currentTarget.dataset.index), 1);
+    });
+  });
+
+  document
+    .querySelector("[data-action='cancel-config']")
+    ?.addEventListener("click", () => {
+      state.configMode = false;
+      state.configDraft = [];
+      state.isSavingConfig = false;
+      render();
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    });
+
+  document
+    .querySelector("[data-action='save-config']")
+    ?.addEventListener("click", saveSubjectSettings);
+}
+
+function moveSubject(index, offset) {
+  const targetIndex = index + offset;
+
+  if (
+    !Number.isInteger(index) ||
+    targetIndex < 0 ||
+    targetIndex >= state.configDraft.length
+  ) {
+    return;
+  }
+
+  const items = [...state.configDraft];
+  [items[index], items[targetIndex]] = [items[targetIndex], items[index]];
+  state.configDraft = items.map((item, position) => ({
+    ...item,
+    order: position + 1,
+  }));
+  render();
+}
+
+async function saveSubjectSettings() {
+  if (!canManageSubjects() || !state.adminToken) {
+    resetAdminAccess();
+    showToast("Informe a senha para configurar a liberação.", "error");
+    render();
+    return;
+  }
+
+  state.isSavingConfig = true;
+  render();
+
+  try {
+    const response = await fetch(SUBJECTS_ENDPOINT, {
+      method: "PATCH",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+        "X-Admin-Token": state.adminToken,
+      },
+      body: JSON.stringify({
+        settings: state.configDraft.map((item, index) => ({
+          id: item.id,
+          order: index + 1,
+          released: item.released,
+          requiresPrevious: item.requiresPrevious,
+        })),
+      }),
+    });
+    const result = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+      throw new Error(result.error || "Não foi possível salvar a configuração.");
+    }
+
+    applyTrainingsFromResponse(result.trainings);
+    state.configMode = false;
+    state.configDraft = [];
+    state.isSavingConfig = false;
+    ensureSelectableTraining();
+    saveDraft();
+    showToast("Liberação atualizada com sucesso.", "success");
+    render();
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  } catch (error) {
+    if (/senha|administrativa|token|401/i.test(error.message)) {
+      state.adminToken = "";
+      state.adminUnlocked = false;
+    }
+
+    state.isSavingConfig = false;
+    showToast(error.message, "error");
+    render();
+  }
+}
+
+function applyTrainingsFromResponse(trainings) {
+  if (!Array.isArray(trainings)) {
+    return false;
+  }
+
+  state.trainings = trainings.filter(isValidTraining).sort(sortTrainings);
+  state.trainingStatus = "loaded";
+  return true;
 }
 
 function renderModule(module) {
@@ -1082,10 +1540,16 @@ async function saveTraining() {
     }
 
     const training = result.training;
-    state.trainings = [
-      training,
-      ...state.trainings.filter((item) => item.id !== training.id),
-    ].filter(isValidTraining);
+
+    if (!applyTrainingsFromResponse(result.trainings)) {
+      state.trainings = [
+        training,
+        ...state.trainings.filter((item) => item.id !== training.id),
+      ]
+        .filter(isValidTraining)
+        .sort(sortTrainings);
+    }
+
     state.selectedTrainingId = training.id;
     state.trainingDraft = createEmptyTrainingDraft();
     state.creatorMode = false;
@@ -1167,6 +1631,8 @@ async function submitAnswers() {
     markCurrentModuleAsSaved();
 
     state.savedModules = getAnsweredModulesForSelectedTraining();
+    await loadLeaderProgress();
+
     state.submitted = true;
     state.isSubmitting = false;
     clearDraft();
@@ -1337,6 +1803,8 @@ function markCurrentModuleAsSaved() {
     return;
   }
 
+  markModuleProgress(state.selectedTrainingId, module.id);
+
   const savedModule = {
     id: module.id,
     number: module.number,
@@ -1413,6 +1881,7 @@ function renderSuccess() {
       ? state.savedModules
       : getAnsweredModulesForSelectedTraining();
     state.creatorMode = false;
+    state.configMode = false;
     state.editingTrainingId = "";
     state.trainingDraft = createEmptyTrainingDraft();
     state.currentModuleIndex = -1;
@@ -1432,6 +1901,10 @@ function getSelectedLeader() {
   );
 }
 
+function getLeaderId() {
+  return getSelectedLeader()?.userId || state.leader?.id || "";
+}
+
 function getLoggedUserEmail() {
   return String(state.leader?.email || state.email || "").trim().toLowerCase();
 }
@@ -1446,8 +1919,11 @@ function resetAdminAccess() {
   state.adminToken = "";
   state.isCheckingAdmin = false;
   state.creatorMode = false;
+  state.configMode = false;
+  state.configDraft = [];
   state.editingTrainingId = "";
   state.isSavingTraining = false;
+  state.isSavingConfig = false;
 }
 
 function getMemberIdentityMarkup({ showEmail = true } = {}) {
@@ -1544,6 +2020,13 @@ function isPlainObject(value) {
 }
 
 function sortTrainings(firstTraining, secondTraining) {
+  const firstOrder = Number(firstTraining.order) || 0;
+  const secondOrder = Number(secondTraining.order) || 0;
+
+  if (firstOrder !== secondOrder) {
+    return firstOrder - secondOrder;
+  }
+
   return String(firstTraining.title || "").localeCompare(
     String(secondTraining.title || ""),
     "pt-BR",
@@ -1724,6 +2207,9 @@ function restoreDraft() {
         : -1;
     state.answers = draft.answers || {};
     state.savedModules = Array.isArray(draft.savedModules) ? draft.savedModules : [];
+    state.progressByTraining = isPlainObject(draft.progressByTraining)
+      ? draft.progressByTraining
+      : {};
     state.submissionId = draft.submissionId || "";
     state.isSavingModule = false;
     state.isSubmitting = false;
@@ -1749,6 +2235,7 @@ function saveDraft() {
     trainingDraft: state.trainingDraft,
     currentModuleIndex: state.currentModuleIndex,
     answers: state.answers,
+    progressByTraining: state.progressByTraining,
     submissionId: state.submissionId,
   };
   localStorage.setItem(DRAFT_KEY, JSON.stringify(draft));

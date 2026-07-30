@@ -132,10 +132,14 @@ async function handleGetSavedAnswers(req, res, sql) {
   const leaderId = String(params.get("lider_id") || "").trim();
   const studyId = String(params.get("estudo_id") || "").trim();
 
-  if (!leaderId || !studyId) {
+  if (!leaderId) {
     return res.status(400).json({
-      error: "Informe lider_id e estudo_id para carregar respostas salvas.",
+      error: "Informe lider_id para carregar respostas salvas.",
     });
+  }
+
+  if (!studyId) {
+    return handleGetLeaderProgress(res, sql, leaderId);
   }
 
   const [latest] = await sql`
@@ -169,6 +173,39 @@ async function handleGetSavedAnswers(req, res, sql) {
   `;
 
   return res.status(200).json(normalizeSavedAnswers(rows, submissionId));
+}
+
+async function handleGetLeaderProgress(res, sql, leaderId) {
+  const rows = await sql`
+    select
+      estudo_id,
+      payload->'modulo'->>'id' as modulo_id
+    from respostas_discipulado
+    where lider_id = ${leaderId}
+      and payload->'metadados'->>'tipo_registro' = 'modulo'
+  `;
+
+  const progress = {};
+
+  rows.forEach((row) => {
+    const studyId = String(row.estudo_id || "").trim();
+    const moduleId = String(row.modulo_id || "").trim();
+
+    if (!studyId || !moduleId) {
+      return;
+    }
+
+    if (!progress[studyId]) {
+      progress[studyId] = [];
+    }
+
+    if (!progress[studyId].includes(moduleId)) {
+      progress[studyId].push(moduleId);
+    }
+  });
+
+  res.setHeader("Cache-Control", "no-store");
+  return res.status(200).json({ progress });
 }
 
 function normalizeSavedAnswers(rows, submissionId) {

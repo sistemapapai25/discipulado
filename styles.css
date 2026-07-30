@@ -264,6 +264,7 @@ h1 {
 }
 
 .field label,
+.field-label,
 .question-label {
   color: var(--ink);
   font-size: 0.9rem;
@@ -306,6 +307,231 @@ h1 {
 .textarea:focus {
   border-color: var(--primary);
   box-shadow: 0 0 0 3px rgba(23, 107, 92, 0.15);
+}
+
+.training-list {
+  display: grid;
+  gap: 10px;
+}
+
+.training-option {
+  display: grid;
+  grid-template-columns: 34px 1fr auto;
+  gap: 12px;
+  align-items: start;
+  width: 100%;
+  min-height: 62px;
+  padding: 13px 14px;
+  border: 1px solid var(--line);
+  color: var(--ink);
+  background: #fff;
+  text-align: left;
+  transition:
+    border-color 120ms ease,
+    background 120ms ease,
+    box-shadow 120ms ease;
+}
+
+.training-option:hover:not(:disabled) {
+  border-color: var(--primary);
+  background: #fbfdfb;
+}
+
+.training-option.is-selected {
+  border-color: var(--primary);
+  background: rgba(23, 107, 92, 0.07);
+  box-shadow: 0 0 0 2px rgba(23, 107, 92, 0.16);
+}
+
+.training-option.is-locked {
+  border-style: dashed;
+  background: #f7f8f6;
+}
+
+.training-option:disabled {
+  cursor: not-allowed;
+  opacity: 0.88;
+}
+
+.training-option-order {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  color: var(--primary-dark);
+  background: var(--surface-soft);
+  font-size: 0.92rem;
+  font-weight: 900;
+}
+
+.training-option.is-selected .training-option-order {
+  color: #fff;
+  background: var(--primary);
+}
+
+.training-option.is-complete .training-option-order {
+  color: #fff;
+  background: var(--success);
+}
+
+.training-option-body {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+}
+
+.training-option-body strong {
+  font-size: 0.98rem;
+  line-height: 1.32;
+}
+
+.training-option-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.training-option-check {
+  align-self: center;
+  color: var(--success);
+  font-size: 1.05rem;
+  font-weight: 900;
+}
+
+.tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 9px;
+  border-radius: 999px;
+  color: var(--muted);
+  background: var(--surface-soft);
+  font-size: 0.78rem;
+  font-weight: 800;
+  line-height: 1.35;
+}
+
+.tag-lock {
+  color: #7a3b46;
+  background: rgba(173, 76, 93, 0.14);
+}
+
+.tag-done {
+  color: #14603c;
+  background: rgba(31, 122, 79, 0.15);
+}
+
+.tag-progress {
+  color: #6f4512;
+  background: rgba(201, 146, 46, 0.18);
+}
+
+.tag-admin {
+  color: var(--primary-dark);
+  background: rgba(23, 107, 92, 0.14);
+}
+
+.config-list {
+  display: grid;
+  gap: 12px;
+}
+
+.config-item {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: #fbfcfb;
+}
+
+.config-item.is-blocked {
+  border-style: dashed;
+  background: #f7f8f6;
+}
+
+.config-item-head {
+  display: grid;
+  grid-template-columns: 32px 1fr auto;
+  gap: 12px;
+  align-items: center;
+}
+
+.config-order {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  color: #fff;
+  background: var(--primary-dark);
+  font-size: 0.88rem;
+  font-weight: 900;
+}
+
+.config-item-title {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.config-move {
+  display: flex;
+  gap: 6px;
+}
+
+.icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  min-height: 40px;
+  border: 1px solid var(--line);
+  color: var(--primary-dark);
+  background: #fff;
+  font-size: 1rem;
+  font-weight: 900;
+}
+
+.icon-button:hover:not(:disabled) {
+  border-color: var(--primary);
+  background: var(--surface-soft);
+}
+
+.icon-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.42;
+}
+
+.switch-row {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 11px;
+  align-items: start;
+  padding: 11px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: #fff;
+  cursor: pointer;
+}
+
+.switch-row input {
+  width: 22px;
+  height: 22px;
+  margin: 1px 0 0;
+  accent-color: var(--primary);
+}
+
+.switch-row span {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.switch-row strong {
+  font-size: 0.92rem;
 }
 
 .study-confirm {
@@ -591,12 +817,9 @@ h1 {
   }
 
   .actions {
-    grid-template-columns: auto auto;
-    justify-content: end;
-  }
-
-  .actions.split {
-    grid-template-columns: auto auto auto;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
   }
 
   .btn {

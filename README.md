@@ -9,9 +9,10 @@ WebApp mobile-first para discipulado da igreja, com modulos em video, questionar
 - `app.js`: configuracao do estudo, fluxo dos modulos e envio.
 - `api/acesso.js`: Vercel Serverless Function que valida o e-mail do usuario no Supabase church360.
 - `api/admin.js`: Vercel Serverless Function que valida a senha administrativa para criar e editar assuntos.
-- `api/assuntos.js`: Vercel Serverless Function que lista, cria e edita assuntos de discipulado no Neon.
-- `api/salvar.js`: Vercel Serverless Function que grava no Neon.
+- `api/assuntos.js`: Vercel Serverless Function que lista, cria, edita e configura a liberacao dos assuntos de discipulado no Neon.
+- `api/salvar.js`: Vercel Serverless Function que grava no Neon e devolve o progresso do lider.
 - `sql/seed-assunto-gloria.sql`: insert inicial do assunto "Aumentando os Niveis de Gloria" no Neon.
+- `sql/migracao-liberacao-assuntos.sql`: adiciona as colunas de ordem e liberacao dos assuntos.
 
 ## Configuracao
 
@@ -70,6 +71,9 @@ create table if not exists assuntos_discipulado (
   youtube_video_id text,
   modulos jsonb not null,
   ativo boolean not null default true,
+  ordem integer,
+  liberado boolean not null default true,
+  exige_anterior boolean not null default true,
   criado_por_id text,
   criado_por_nome text,
   payload jsonb not null default '{}'::jsonb,
@@ -78,13 +82,36 @@ create table if not exists assuntos_discipulado (
 );
 ```
 
+Se a tabela ja existe sem `ordem`, `liberado` e `exige_anterior`, rode `sql/migracao-liberacao-assuntos.sql`. A funcao `api/assuntos.js` tambem cria essas colunas sozinha na primeira leitura ou gravacao.
+
 Depois de criar a tabela, rode o seed inicial se quiser cadastrar o assunto que antes estava fixo no codigo:
 
 ```sql
 -- arquivo: sql/seed-assunto-gloria.sql
 ```
 
-O app nao traz assuntos fixos no front-end. O menu principal carrega os assuntos da tabela `assuntos_discipulado`. A opcao de liberar edicao so aparece para e-mails administrativos. Depois da senha ser validada pela funcao `/api/admin`, os botoes de criar e editar assuntos ficam disponiveis, e `POST`/`PUT` em `/api/assuntos` tambem exigem token administrativo.
+O app nao traz assuntos fixos no front-end. O menu principal carrega os assuntos da tabela `assuntos_discipulado`. A opcao de liberar edicao so aparece para e-mails administrativos. Depois da senha ser validada pela funcao `/api/admin`, os botoes de configurar liberacao, criar e editar assuntos ficam disponiveis, e `POST`/`PUT`/`PATCH` em `/api/assuntos` tambem exigem token administrativo.
+
+## Liberacao dos assuntos
+
+O menu principal lista os assuntos na ordem definida pela liderança e mostra um cadeado nos que ainda nao podem ser feitos. O botao "Configurar liberacao" abre a tela onde o administrador define, para cada assunto:
+
+- a **ordem** na fila (setas para cima e para baixo);
+- se esta **liberado** para os lideres (chave manual, para segurar um assunto ate a hora certa);
+- se **exige concluir o assunto anterior** (o lider so abre este assunto depois de responder todos os modulos do anterior liberado).
+
+Regras de leitura do cadeado:
+
+- assunto nao liberado: bloqueado para todo mundo, com o aviso "Ainda nao liberado pela lideranca";
+- assunto que exige o anterior: bloqueado ate a pessoa concluir todos os modulos do assunto liberado imediatamente acima na fila;
+- o primeiro assunto liberado da fila nunca fica bloqueado por pre-requisito, mesmo com a opcao ligada;
+- enquanto a senha administrativa estiver validada, o administrador enxerga todos os assuntos abertos (com o aviso do motivo), para conseguir testar.
+
+Assuntos novos nascem com `liberado = true` e `exige_anterior = true`, entrando no fim da fila.
+
+A tela usa `PATCH /api/assuntos` com `{ settings: [{ id, order, released, requiresPrevious }] }` e o header `X-Admin-Token`.
+
+O progresso de cada lider vem de `GET /api/salvar?lider_id=<id>`, que devolve `{ progress: { "<estudo_id>": ["modulo-1", "modulo-2"] } }` com os modulos ja gravados no Neon.
 
 ## Supabase church360
 

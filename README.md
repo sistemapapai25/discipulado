@@ -9,10 +9,13 @@ WebApp mobile-first para discipulado da igreja, com modulos em video, questionar
 - `app.js`: configuracao do estudo, fluxo dos modulos e envio.
 - `api/acesso.js`: Vercel Serverless Function que valida o e-mail do usuario no Supabase church360.
 - `api/admin.js`: Vercel Serverless Function que valida a senha administrativa para criar e editar assuntos.
+- `api/series.js`: Vercel Serverless Function que lista, cria, edita e configura as series.
 - `api/assuntos.js`: Vercel Serverless Function que lista, cria, edita e configura a liberacao dos assuntos de discipulado no Neon.
+- `api/schema.js`: cria a tabela de series e as colunas de liberacao quando o banco ainda esta no formato antigo.
 - `api/salvar.js`: Vercel Serverless Function que grava no Neon e devolve o progresso do lider.
 - `sql/seed-assunto-gloria.sql`: insert inicial do assunto "Aumentando os Niveis de Gloria" no Neon.
 - `sql/migracao-liberacao-assuntos.sql`: adiciona as colunas de ordem e liberacao dos assuntos.
+- `sql/migracao-series.sql`: cria a tabela de series e liga os assuntos existentes a primeira serie.
 
 ## Configuracao
 
@@ -64,10 +67,24 @@ create table if not exists respostas_discipulado (
 A funcao `api/assuntos.js` espera uma tabela para os assuntos cadastrados:
 
 ```sql
+create table if not exists series_discipulado (
+  id text primary key,
+  titulo text not null,
+  descricao text,
+  ordem integer,
+  liberado boolean not null default true,
+  ativo boolean not null default true,
+  criado_por_id text,
+  criado_por_nome text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
 create table if not exists assuntos_discipulado (
   id text primary key,
   titulo text not null,
   pregador text,
+  serie_id text,
   youtube_video_id text,
   modulos jsonb not null,
   ativo boolean not null default true,
@@ -82,7 +99,7 @@ create table if not exists assuntos_discipulado (
 );
 ```
 
-Se a tabela ja existe sem `ordem`, `liberado` e `exige_anterior`, rode `sql/migracao-liberacao-assuntos.sql`. A funcao `api/assuntos.js` tambem cria essas colunas sozinha na primeira leitura ou gravacao.
+Se a tabela ja existe sem essas colunas, rode `sql/migracao-liberacao-assuntos.sql` e depois `sql/migracao-series.sql`. O `api/schema.js` tambem aplica tudo sozinho na primeira leitura ou gravacao, mas ai a primeira serie nasce com o titulo generico "Discipulado" — rodando o SQL a mao voce escolhe o nome dela.
 
 Depois de criar a tabela, rode o seed inicial se quiser cadastrar o assunto que antes estava fixo no codigo:
 
@@ -92,26 +109,45 @@ Depois de criar a tabela, rode o seed inicial se quiser cadastrar o assunto que 
 
 O app nao traz assuntos fixos no front-end. O menu principal carrega os assuntos da tabela `assuntos_discipulado`. A opcao de liberar edicao so aparece para e-mails administrativos. Depois da senha ser validada pela funcao `/api/admin`, os botoes de configurar liberacao, criar e editar assuntos ficam disponiveis, e `POST`/`PUT`/`PATCH` em `/api/assuntos` tambem exigem token administrativo.
 
-## Liberacao dos assuntos
+## Series, assuntos e liberacao
 
-O menu principal lista os assuntos na ordem definida pela liderança e mostra um cadeado nos que ainda nao podem ser feitos. O botao "Configurar liberacao" abre a tela onde o administrador define, para cada assunto:
+A hierarquia e **Serie > Assunto > Modulo > Perguntas**. Cada serie e uma fila independente: concluir os assuntos de uma serie nao interfere em nenhuma outra.
 
-- a **ordem** na fila (setas para cima e para baixo);
-- se esta **liberado** para os lideres (chave manual, para segurar um assunto ate a hora certa);
-- se **exige concluir o assunto anterior** (o lider so abre este assunto depois de responder todos os modulos do anterior liberado).
+Navegacao do lider:
+
+- o menu principal lista as series, com cadeado nas que nao estao liberadas;
+- ao entrar numa serie, ele ve os assuntos dela, tambem com cadeado e o motivo;
+- **quando existe apenas uma serie, a tela de series e pulada** e o app abre direto nos assuntos.
+
+O botao "Configurar liberacao" abre uma tela unica com os dois niveis. Por serie:
+
+- a **ordem** na lista (setas para cima e para baixo);
+- se a **serie esta liberada** (desligada, ela aparece com cadeado e nenhum assunto dentro dela abre).
+
+E, dentro de cada serie, por assunto:
+
+- a **ordem** dentro daquela serie;
+- se o assunto esta **liberado**;
+- se **exige concluir o assunto anterior** — o anterior liberado *da mesma serie*.
 
 Regras de leitura do cadeado:
 
-- assunto nao liberado: bloqueado para todo mundo, com o aviso "Ainda nao liberado pela lideranca";
-- assunto que exige o anterior: bloqueado ate a pessoa concluir todos os modulos do assunto liberado imediatamente acima na fila;
-- o primeiro assunto liberado da fila nunca fica bloqueado por pre-requisito, mesmo com a opcao ligada;
-- enquanto a senha administrativa estiver validada, o administrador enxerga todos os assuntos abertos (com o aviso do motivo), para conseguir testar.
+- serie ou assunto nao liberado: bloqueado para todo mundo, com o aviso "Ainda nao liberado pela lideranca";
+- assunto que exige o anterior: bloqueado ate a pessoa concluir todos os modulos do assunto liberado imediatamente acima na fila daquela serie;
+- o primeiro assunto liberado de cada serie nunca fica bloqueado por pre-requisito, mesmo com a opcao ligada;
+- a chave "exige o anterior" pertence ao assunto, nao a posicao: reordenar nao liga nem desliga a chave de ninguem;
+- enquanto a senha administrativa estiver validada, o administrador enxerga tudo aberto (com o aviso do motivo), para conseguir testar.
 
-Assuntos novos nascem com `liberado = true` e `exige_anterior = true`, entrando no fim da fila.
+Series novas nascem liberadas, no fim da lista. Assuntos novos nascem com `liberado = true` e `exige_anterior = true`, no fim da fila **da serie escolhida**.
 
-A tela usa `PATCH /api/assuntos` com `{ settings: [{ id, order, released, requiresPrevious }] }` e o header `X-Admin-Token`.
+Endpoints usados pela tela de configuracao, os dois com o header `X-Admin-Token`:
 
-O progresso de cada lider vem de `GET /api/salvar?lider_id=<id>`, que devolve `{ progress: { "<estudo_id>": ["modulo-1", "modulo-2"] } }` com os modulos ja gravados no Neon.
+- `PATCH /api/series` com `{ settings: [{ id, order, released }] }`;
+- `PATCH /api/assuntos` com `{ settings: [{ id, seriesId, order, released, requiresPrevious }] }` — o `seriesId` tambem move o assunto de serie.
+
+`GET /api/assuntos` devolve `{ series, trainings }` numa requisicao so, para o app nao precisar de duas idas ao servidor.
+
+O progresso de cada lider vem de `GET /api/salvar?lider_id=<id>`, que devolve `{ progress: { "<estudo_id>": ["modulo-1", "modulo-2"] } }` com os modulos ja gravados no Neon. As respostas gravadas passam a incluir `payload.serie` com o id e o titulo da serie, para separar os relatorios depois.
 
 ## Supabase church360
 

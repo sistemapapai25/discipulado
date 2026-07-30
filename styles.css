@@ -400,6 +400,11 @@ h1 {
   font-weight: 900;
 }
 
+.training-option-check.chevron {
+  color: var(--muted);
+  font-size: 1.35rem;
+}
+
 .tag {
   display: inline-flex;
   align-items: center;
@@ -449,6 +454,49 @@ h1 {
 .config-item.is-blocked {
   border-style: dashed;
   background: #f7f8f6;
+}
+
+.config-item-title .eyebrow {
+  margin: 0 0 2px;
+  font-size: 0.68rem;
+}
+
+.config-subjects {
+  display: grid;
+  gap: 10px;
+  padding-left: 12px;
+  border-left: 2px solid var(--line);
+}
+
+.config-subject {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: #fff;
+}
+
+.config-subject.is-blocked {
+  border-style: dashed;
+  background: #f7f8f6;
+}
+
+.config-subject .config-item-head {
+  grid-template-columns: 26px 1fr auto;
+}
+
+.config-order.small {
+  width: 26px;
+  height: 26px;
+  color: var(--primary-dark);
+  background: var(--surface-soft);
+  font-size: 0.8rem;
+}
+
+.eyebrow.on-hero {
+  margin-bottom: 2px;
+  color: rgba(255, 255, 255, 0.82);
 }
 
 .config-item-head {

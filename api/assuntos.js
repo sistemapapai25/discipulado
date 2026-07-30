@@ -4,6 +4,13 @@ import {
   isAdminPasswordConfigured,
   verifyAdminToken,
 } from "./admin-auth.js";
+import {
+  ensureSchema,
+  isMissingColumnError,
+  isMissingTableError,
+  listSeries,
+  makeEntityId,
+} from "./schema.js";
 
 export default async function handler(req, res) {
   if (!["GET", "POST", "PUT", "PATCH"].includes(req.method)) {
@@ -23,8 +30,12 @@ export default async function handler(req, res) {
     if (req.method === "GET") {
       res.setHeader("Cache-Control", "no-store");
 
+      // Uma requisição só: o app precisa das séries e dos assuntos juntos.
+      const trainings = await listTrainings(sql);
+
       return res.status(200).json({
-        trainings: await listTrainings(sql),
+        series: await listSeries(sql),
+        trainings,
       });
     }
 
@@ -42,7 +53,7 @@ export default async function handler(req, res) {
 
     const payload = typeof req.body === "string" ? JSON.parse(req.body) : req.body;
 
-    await ensureReleaseColumns(sql);
+    await ensureSchema(sql);
 
     if (req.method === "PATCH") {
       const settings = normalizeReleaseSettings(payload?.settings);
@@ -50,18 +61,26 @@ export default async function handler(req, res) {
       await sql`
         update assuntos_discipulado as assunto
         set
+          serie_id = coalesce(configuracao.serie_id, assunto.serie_id),
           ordem = configuracao.ordem,
           liberado = configuracao.liberado,
           exige_anterior = configuracao.exige_anterior,
           updated_at = now()
         from jsonb_to_recordset(${JSON.stringify(settings)}::jsonb)
-          as configuracao(id text, ordem int, liberado boolean, exige_anterior boolean)
+          as configuracao(
+            id text,
+            serie_id text,
+            ordem int,
+            liberado boolean,
+            exige_anterior boolean
+          )
         where assunto.id = configuracao.id
       `;
 
       res.setHeader("Cache-Control", "no-store");
       return res.status(200).json({
         ok: true,
+        series: await listSeries(sql),
         trainings: await listTrainings(sql),
       });
     }
@@ -76,6 +95,7 @@ export default async function handler(req, res) {
         set
           titulo = ${training.title},
           pregador = ${training.speaker},
+          serie_id = coalesce(${training.seriesId || null}, serie_id),
           youtube_video_id = ${training.youtubeVideoId || null},
           modulos = ${JSON.stringify(training.modules)}::jsonb,
           payload = ${JSON.stringify(payload)}::jsonb,
@@ -110,6 +130,7 @@ export default async function handler(req, res) {
         id,
         titulo,
         pregador,
+        serie_id,
         youtube_video_id,
         modulos,
         ativo,
@@ -124,10 +145,15 @@ export default async function handler(req, res) {
         ${training.id},
         ${training.title},
         ${training.speaker},
+        ${training.seriesId},
         ${training.youtubeVideoId || null},
         ${JSON.stringify(training.modules)}::jsonb,
         true,
-        (select coalesce(max(ordem), 0) + 1 from assuntos_discipulado),
+        (
+          select coalesce(max(ordem), 0) + 1
+          from assuntos_discipulado
+          where serie_id = ${training.seriesId}
+        ),
         true,
         true,
         ${creator.id ? String(creator.id) : null},
@@ -158,7 +184,7 @@ export default async function handler(req, res) {
         "Tabela assuntos_discipulado não encontrada no Neon. Crie a tabela antes de cadastrar novos assuntos.";
 
       if (req.method === "GET") {
-        return res.status(200).json({ trainings: [], warning: message });
+        return res.status(200).json({ series: [], trainings: [], warning: message });
       }
 
       return res.status(500).json({ error: message });
@@ -167,40 +193,6 @@ export default async function handler(req, res) {
     return res.status(500).json({
       error: error.message || "Não foi possível processar os assuntos.",
     });
-  }
-}
-
-async function ensureReleaseColumns(sql) {
-  try {
-    await sql`
-      alter table assuntos_discipulado
-        add column if not exists ordem integer,
-        add column if not exists liberado boolean not null default true,
-        add column if not exists exige_anterior boolean not null default true,
-        add column if not exists updated_at timestamptz not null default now()
-    `;
-
-    await sql`
-      update assuntos_discipulado as assunto
-      set ordem = posicao.linha
-      from (
-        select
-          id,
-          row_number() over (order by created_at asc, id asc) as linha
-        from assuntos_discipulado
-      ) as posicao
-      where assunto.id = posicao.id
-        and assunto.ordem is null
-    `;
-  } catch (error) {
-    if (error?.code === "42P01") {
-      throw error;
-    }
-
-    console.warn(
-      "Não foi possível ajustar as colunas de liberação dos assuntos",
-      error?.message,
-    );
   }
 }
 
@@ -213,18 +205,9 @@ async function listTrainings(sql) {
     }
   }
 
-  // Banco ainda sem as colunas de liberacao: cria na hora e tenta de novo.
-  await ensureReleaseColumns(sql);
-
-  try {
-    return await selectTrainings(sql);
-  } catch (error) {
-    if (!isMissingColumnError(error)) {
-      throw error;
-    }
-
-    return selectLegacyTrainings(sql);
-  }
+  // Banco ainda no formato antigo: ajusta o schema na hora e tenta de novo.
+  await ensureSchema(sql);
+  return selectTrainings(sql);
 }
 
 async function selectTrainings(sql) {
@@ -233,6 +216,7 @@ async function selectTrainings(sql) {
       id,
       titulo,
       pregador,
+      serie_id,
       youtube_video_id,
       modulos,
       ordem,
@@ -245,39 +229,6 @@ async function selectTrainings(sql) {
   `;
 
   return rows.map((row) => rowToTraining(row)).filter(Boolean);
-}
-
-async function selectLegacyTrainings(sql) {
-  const rows = await sql`
-    select
-      id,
-      titulo,
-      pregador,
-      youtube_video_id,
-      modulos,
-      created_at
-    from assuntos_discipulado
-    where ativo = true
-    order by created_at asc
-  `;
-
-  return rows
-    .map((row, index) =>
-      rowToTraining({
-        ...row,
-        ordem: index + 1,
-        liberado: true,
-        exige_anterior: false,
-      }),
-    )
-    .filter(Boolean);
-}
-
-function isMissingColumnError(error) {
-  return (
-    error?.code === "42703" ||
-    /column .* does not exist/i.test(String(error?.message || ""))
-  );
 }
 
 function normalizeReleaseSettings(settings) {
@@ -294,6 +245,7 @@ function normalizeReleaseSettings(settings) {
 
       return {
         id,
+        serie_id: String(item?.seriesId || "").trim() || null,
         ordem: Number.isFinite(order) && order > 0 ? Math.trunc(order) : index + 1,
         liberado: item?.released !== false,
         exige_anterior: item?.requiresPrevious === true,
@@ -311,11 +263,16 @@ function normalizeReleaseSettings(settings) {
 function normalizeTrainingPayload(payload, options = {}) {
   const title = String(payload?.title || "").trim();
   const speaker = String(payload?.speaker || "").trim();
+  const seriesId = String(payload?.seriesId || "").trim();
   const rawModules = Array.isArray(payload?.modules) ? payload.modules : [];
   const existingId = String(payload?.id || "").trim();
 
   if (!title) {
     throw new Error("Informe o título do assunto.");
+  }
+
+  if (!options.keepId && !seriesId) {
+    throw new Error("Escolha a série em que este assunto entra.");
   }
 
   if (options.keepId && !existingId) {
@@ -333,9 +290,10 @@ function normalizeTrainingPayload(payload, options = {}) {
   }
 
   return {
-    id: options.keepId ? existingId : makeTrainingId(title),
+    id: options.keepId ? existingId : makeEntityId(title, "assunto"),
     title,
     speaker,
+    seriesId,
     youtubeVideoId: extractYoutubeVideoId(payload?.youtubeVideoUrl || ""),
     modules,
     source: "neon",
@@ -388,6 +346,7 @@ function rowToTraining(row) {
     id: String(row.id),
     title: row.titulo,
     speaker: row.pregador || "",
+    seriesId: row.serie_id ? String(row.serie_id) : "",
     youtubeVideoId: row.youtube_video_id || "",
     modules: Array.isArray(row.modulos) ? row.modulos : [],
     order: Number.isFinite(order) && order > 0 ? order : 0,
@@ -400,19 +359,6 @@ function rowToTraining(row) {
 
 function findTraining(trainings, id) {
   return trainings.find((training) => training.id === String(id)) || null;
-}
-
-function makeTrainingId(title) {
-  const slug =
-    title
-      .normalize("NFD")
-      .replace(/[\u0300-\u036f]/g, "")
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-+|-+$/g, "")
-      .slice(0, 70) || "assunto";
-
-  return `${slug}-${Date.now()}`;
 }
 
 function extractYoutubeVideoId(urlOrId) {
@@ -474,9 +420,3 @@ function buildTimeLabel(startTime, endTime) {
   return start || end || "Vídeo completo";
 }
 
-function isMissingTableError(error) {
-  return (
-    error?.code === "42P01" ||
-    String(error?.message || "").includes("assuntos_discipulado")
-  );
-}

@@ -828,9 +828,9 @@ function renderMainMenu() {
           ${getChurchLogoMarkup("main-menu-logo")}
           <span>${escapeHtml(CHURCH_CONFIG.name)}</span>
         </div>
-        ${hasManySeries ? `<p class="eyebrow on-hero">Série</p>` : ""}
-        <h2>${escapeHtml(hasManySeries ? selectedSeries?.title || "Menu Principal" : "Menu Principal")}</h2>
-        <p>${escapeHtml(hasManySeries ? selectedSeries?.description || "Escolha o assunto e inicie o Discipulado." : "Escolha o assunto e inicie o Discipulado.")}</p>
+        <p class="eyebrow on-hero">Série</p>
+        <h2>${escapeHtml(selectedSeries?.title || "Menu Principal")}</h2>
+        <p>${escapeHtml(selectedSeries?.description || "Escolha o assunto e inicie o Discipulado.")}</p>
       </div>
       <div class="panel-body">
         <div class="form-grid">

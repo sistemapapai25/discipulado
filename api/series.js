@@ -3,14 +3,14 @@ import {
   getAdminTokenFromRequest,
   isAdminPasswordConfigured,
   verifyAdminToken,
-} from "./admin-auth.js";
+} from "../lib/admin-auth.js";
 import {
   ensureSchema,
   isMissingColumnError,
   isMissingTableError,
   listSeries,
   makeEntityId,
-} from "./schema.js";
+} from "../lib/schema.js";
 
 export default async function handler(req, res) {
   if (!["GET", "POST", "PUT", "PATCH"].includes(req.method)) {

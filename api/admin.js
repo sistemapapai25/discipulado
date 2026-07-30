@@ -3,7 +3,7 @@ import {
   isAdminPasswordConfigured,
   verifyAdminEmail,
   verifyAdminPassword,
-} from "./admin-auth.js";
+} from "../lib/admin-auth.js";
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {

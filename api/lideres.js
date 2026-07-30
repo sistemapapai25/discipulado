@@ -1,21 +1,21 @@
 import {
   getAdminTokenFromRequest,
   verifyAdminToken,
-} from "./admin-auth.js";
+} from "../lib/admin-auth.js";
 import {
   createChurch360Client,
   findActivePersonByEmail,
   getPersonName,
   isChurch360Configured,
   searchActivePeople,
-} from "./church360.js";
+} from "../lib/church360.js";
 import {
   ensureCredentialTables,
   findCredentialsByEmails,
   generateTemporaryPassword,
   getSql,
   savePassword,
-} from "./credenciais.js";
+} from "../lib/credenciais.js";
 
 export default async function handler(req, res) {
   if (!["GET", "POST"].includes(req.method)) {

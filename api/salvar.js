@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import {
   getLeaderTokenFromRequest,
   verifyLeaderToken,
-} from "./session-auth.js";
+} from "../lib/session-auth.js";
 
 const REQUIRED_FIELDS = ["estudo", "lider", "respostas"];
 

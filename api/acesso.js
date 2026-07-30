@@ -6,7 +6,7 @@ import {
   getPersonFirstName,
   hasServiceRoleKey,
   isChurch360Configured,
-} from "./church360.js";
+} from "../lib/church360.js";
 import {
   consumeVerificationCode,
   ensureCredentialTables,
@@ -17,10 +17,10 @@ import {
   saveVerificationCode,
   validatePasswordStrength,
   verifyPassword,
-} from "./credenciais.js";
-import { isEmailConfigured, sendVerificationCodeEmail } from "./email.js";
-import { checkRateLimit, getClientIp, registerAttempt } from "./rate-limit.js";
-import { createLeaderToken, isSessionSecretConfigured } from "./session-auth.js";
+} from "../lib/credenciais.js";
+import { isEmailConfigured, sendVerificationCodeEmail } from "../lib/email.js";
+import { checkRateLimit, getClientIp, registerAttempt } from "../lib/rate-limit.js";
+import { createLeaderToken, isSessionSecretConfigured } from "../lib/session-auth.js";
 
 const ACTIONS = [
   "status",
